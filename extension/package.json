@@ -1,0 +1,43 @@
+{
+  "name": "fractype-typography-compressor",
+  "displayName": "FracType Typography Compressor",
+  "description": "Wraps selected TOP/BOTTOM strings into vinculum typographic syntax (React + LaTeX).",
+  "version": "1.0.0",
+  "publisher": "fractype",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Formatters", "Snippets"],
+  "activationEvents": [],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "fractype.wrapReact",
+        "title": "FracType: Wrap into React <VinculumTypography>"
+      },
+      {
+        "command": "fractype.wrapLaTeX",
+        "title": "FracType: Wrap into LaTeX \\compressTwo"
+      },
+      {
+        "command": "fractype.wrapAuto",
+        "title": "FracType: Auto-Wrap (Language-Aware)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "fractype.wrapReact",
+        "key": "ctrl+alt+v",
+        "mac": "cmd+alt+v",
+        "when": "editorHasSelection"
+      },
+      {
+        "command": "fractype.wrapAuto",
+        "key": "ctrl+alt+b",
+        "mac": "cmd+alt+b",
+        "when": "editorHasSelection && editorLangId =~ /javascript|typescript|jsx|tsx|latex|tex/"
+      }
+    ]
+  }
+}

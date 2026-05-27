@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hyper Poly Openworld</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{overflow:hidden;background:#000;font-family:'Courier New',monospace}
+canvas{display:block}
+#hud{position:fixed;top:16px;left:16px;color:#fff;font-size:13px;pointer-events:none;z-index:10;text-shadow:0 0 8px rgba(0,0,0,.8)}
+#hud div{margin:2px 0;opacity:.85}
+#crosshair{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:8px;height:8px;pointer-events:none;z-index:10}
+#crosshair::before,#crosshair::after{content:'';position:absolute;background:rgba(255,255,255,.6)}
+#crosshair::before{width:2px;height:100%;left:3px;top:0}
+#crosshair::after{width:100%;height:2px;left:0;top:3px}
+#loader{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;z-index:100;background:rgba(0,0,0,.9);transition:opacity .5s}
+#loader.hide{opacity:0;pointer-events:none}
+</style>
+</head>
+<body>
+<div id="loader">GENERATING WORLD...</div>
+<div id="hud">
+  <div id="hud-coords">POS: 0, 0, 0</div>
+  <div id="hud-gems">GEMS: 0 / 20</div>
+  <div id="hud-time">TIME: DAWN</div>
+  <div id="hud-speed">SPD: 1.0</div>
+</div>
+<div id="crosshair"></div>
+
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js"}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+// ── NOISE (value noise + fractal) ──
+const noisePerm = new Uint8Array(512);
+(()=>{const p=[];for(let i=0;i<256;i++)p[i]=i;for(let i=255;i>0;i--){const j=Math.floor(Math.random()*(i+1));[p[i],p[j]]=[p[j],p[i]]}for(let i=0;i<512;i++)noisePerm[i]=p[i&255]})();
+function fade(t){return t*t*t*(t*(t*6-15)+10)}
+function lerp(a,b,t){return a+t*(b-a)}
+function grad(hash,x,y,z){const h=hash&15;const u=h<8?x:y;const v=h<4?y:h===12||h===14?x:z;return ((h&1)?-u:u)+((h&2)?-v:v)}
+function noise3D(x,y,z){const X=Math.floor(x)&255,Y=Math.floor(y)&255,Z=Math.floor(z)&255;x-=Math.floor(x);y-=Math.floor(y);z-=Math.floor(z);const u=fade(x),v=fade(y),w=fade(z);const A=noisePerm[X]+Y,AA=noisePerm[A]+Z,AB=noisePerm[A+1]+Z,B=noisePerm[X+1]+Y,BA=noisePerm[B]+Z,BB=noisePerm[B+1]+Z;return lerp(lerp(lerp(grad(noisePerm[AA],x,y,z),grad(noisePerm[BA],x-1,y,z),u),lerp(grad(noisePerm[AB],x,y-1,z),grad(noisePerm[BB],x-1,y-1,z),u),v),lerp(lerp(grad(noisePerm[AA+1],x,y,z-1),grad(noisePerm[BA+1],x-1,y,z-1),u),lerp(grad(noisePerm[AB+1],x,y-1,z-1),grad(noisePerm[BB+1],x-1,y-1,z-1),u),v),w)}
+function fbm(x,y,z,oct=4){let v=0,a=1,f=1;for(let i=0;i<oct;i++){v+=noise3D(x*f,y*f,z*f)*a;a*=.5;f*=2}return v}
+
+// ── WORLD CONSTANTS ──
+const WORLD_SIZE = 200;
+const TILE_COUNT = 80;
+const TILE_SPACING = WORLD_SIZE / TILE_COUNT;
+const TERRAIN_SCALE = 0.018;
+const TREE_COUNT = 600;
+const ROCK_COUNT = 400;
+const GEM_COUNT = 20;
+const WATER_LEVEL = -0.6;
+
+// ── SCENE SETUP ──
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87CEEB);
+scene.fog = new THREE.Fog(0x87CEEB, 60, 180);
+
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.5, 300);
+camera.position.set(0, 12, 18);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+// ── LIGHTING ──
+const ambient = new THREE.AmbientLight(0x6688cc, 0.7);
+scene.add(ambient);
+const sun = new THREE.DirectionalLight(0xffeedd, 2.8);
+sun.position.set(80, 60, 40);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048,2048);
+sun.shadow.camera.near = 0.5;
+sun.shadow.camera.far = 200;
+sun.shadow.camera.left = -80; sun.shadow.camera.right = 80;
+sun.shadow.camera.top = 80; sun.shadow.camera.bottom = -80;
+sun.shadow.bias = -0.0003;
+scene.add(sun);
+
+const hemi = new THREE.HemisphereLight(0x88ccff, 0x446622, 0.5);
+scene.add(hemi);
+
+// ── TERRAIN ──
+const terrainGeo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, TILE_COUNT, TILE_COUNT);
+terrainGeo.rotateX(-Math.PI/2);
+const positions = terrainGeo.attributes.position;
+const colors = new Float32Array(positions.count * 3);
+
+function getHeight(x,z){
+  const h = fbm(x*TERRAIN_SCALE, 0, z*TERRAIN_SCALE, 5);
+  const ridge = Math.abs(h) * 2.2;
+  const basin = fbm(x*0.007, 50, z*0.007, 3) * 3;
+  return ridge * 5.5 + basin - 0.8;
+}
+
+function biomeColor(h){
+  if(h < WATER_LEVEL + 0.05) return [0.15, 0.45, 0.55]; // sand shore
+  if(h < 0.3) return [0.18 + Math.random()*0.08, 0.55 + Math.random()*0.12, 0.18 + Math.random()*0.06]; // grass
+  if(h < 2.0) return [0.22 + Math.random()*0.10, 0.48 + Math.random()*0.10, 0.12 + Math.random()*0.08]; // meadow
+  if(h < 5.0) return [0.35, 0.32, 0.25]; // rock
+  return [0.85, 0.82, 0.78]; // snow peak
+}
+
+for(let i=0;i<positions.count;i++){
+  const x = positions.getX(i), z = positions.getZ(i);
+  const h = getHeight(x,z);
+  positions.setY(i, h);
+  const [r,g,b] = biomeColor(h);
+  colors[i*3]=r; colors[i*3+1]=g; colors[i*3+2]=b;
+}
+terrainGeo.setAttribute('color', new THREE.BufferAttribute(colors,3));
+terrainGeo.computeVertexNormals();
+
+const terrainMat = new THREE.MeshStandardMaterial({vertexColors:true, flatShading:true, roughness:0.85, metalness:0.05});
+const terrain = new THREE.Mesh(terrainGeo, terrainMat);
+terrain.receiveShadow = true;
+scene.add(terrain);
+
+// ── WATER ──
+const waterGeo = new THREE.PlaneGeometry(WORLD_SIZE*1.1, WORLD_SIZE*1.1);
+const waterMat = new THREE.MeshStandardMaterial({color:0x3388cc, roughness:0.15, metalness:0.4, transparent:true, opacity:0.75, flatShading:true});
+const water = new THREE.Mesh(waterGeo, waterMat);
+water.rotation.x = -Math.PI/2;
+water.position.y = WATER_LEVEL;
+water.renderOrder = 1;
+water.material.depthWrite = false;
+scene.add(water);
+
+// ── LOW-POLY ASSET GENERATORS ──
+function createTree(x,y,z,s=1){
+  const group = new THREE.Group();
+  const trunkH = 1.5*s + Math.random()*s*1.2;
+  const trunkGeo = new THREE.CylinderGeometry(0.12*s, 0.18*s, trunkH, 5);
+  const trunkMat = new THREE.MeshStandardMaterial({color:new THREE.Color().setHSL(0.1,0.4,0.15+Math.random()*0.15),flatShading:true,roughness:0.9});
+  const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+  trunk.position.y = trunkH/2;
+  trunk.castShadow = true; trunk.receiveShadow = true;
+  group.add(trunk);
+
+  const tiers = 2 + Math.floor(Math.random()*2);
+  for(let i=0;i<tiers;i++){
+    const r = (1.2 - i*0.35)*s;
+    const h = 0.9*s*Math.random()*0.3 + 0.7*s;
+    const coneGeo = new THREE.ConeGeometry(r, h, 6);
+    const hue = 0.15 + Math.random()*0.22;
+    const coneMat = new THREE.MeshStandardMaterial({color:new THREE.Color().setHSL(hue,0.7,0.25+Math.random()*0.2),flatShading:true,roughness:0.7});
+    const cone = new THREE.Mesh(coneGeo, coneMat);
+    cone.position.y = trunkH + i*0.65*s;
+    cone.castShadow = true; cone.receiveShadow = true;
+    group.add(cone);
+  }
+  group.position.set(x,y,z);
+  const ry = Math.random()*Math.PI*2;
+  group.rotation.y = ry;
+  group.scale.setScalar(0.7+Math.random()*0.6);
+  return group;
+}
+
+function createRock(x,y,z,s=1){
+  const geo = new THREE.IcosahedronGeometry(s*0.6,0);
+  const mat = new THREE.MeshStandardMaterial({color:new THREE.Color().setHSL(0.08,0.05,0.35+Math.random()*0.35),flatShading:true,roughness:0.8,metalness:0.1});
+  const rock = new THREE.Mesh(geo, mat);
+  rock.position.set(x,y,z);
+  rock.rotation.set(Math.random()*Math.PI,Math.random()*Math.PI,Math.random()*Math.PI);
+  rock.scale.set(0.7+Math.random()*1.2, 0.4+Math.random()*0.8, 0.7+Math.random()*1.2);
+  rock.castShadow = true; rock.receiveShadow = true;
+  return rock;
+}
+
+function createGem(x,y,z){
+  const group = new THREE.Group();
+  const geo = new THREE.OctahedronGeometry(0.35,0);
+  const mat = new THREE.MeshStandardMaterial({color:new THREE.Color().setHSL(0.55+Math.random()*0.3,1,0.55),flatShading:true,roughness:0.1,metalness:0.6,emissive:new THREE.Color().setHSL(0.55+Math.random()*0.3,0.8,0.3)});
+  const gem = new THREE.Mesh(geo, mat);
+  gem.castShadow = true;
+  group.add(gem);
+  // ring
+  const ringGeo = new THREE.TorusGeometry(0.42,0.06,5,8);
+  const ringMat = new THREE.MeshStandardMaterial({color:0xffffff,flatShading:true,roughness:0.2,metalness:0.8,emissive:0x444444});
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.x = Math.PI/2;
+  group.add(ring);
+  group.position.set(x,y,z);
+  group.userData = {gem:true, collected:false, baseY:y, phase:Math.random()*Math.PI*2};
+  return group;
+}
+
+// ── SCATTER OBJECTS ──
+const trees = [], rocks = [], gems = [];
+function scatterObjects(){
+  for(let i=0;i<TREE_COUNT;i++){
+    const x = (Math.random()-0.5)*WORLD_SIZE*0.92;
+    const z = (Math.random()-0.5)*WORLD_SIZE*0.92;
+    const h = getHeight(x,z);
+    if(h < WATER_LEVEL + 0.2 || h > 5.5) continue;
+    const tree = createTree(x,h,z);
+    scene.add(tree); trees.push(tree);
+  }
+  for(let i=0;i<ROCK_COUNT;i++){
+    const x = (Math.random()-0.5)*WORLD_SIZE*0.92;
+    const z = (Math.random()-0.5)*WORLD_SIZE*0.92;
+    const h = getHeight(x,z);
+    if(h < WATER_LEVEL - 0.1 || h > 6.0) continue;
+    const rock = createRock(x,h,z,0.3+Math.random()*1.5);
+    scene.add(rock); rocks.push(rock);
+  }
+  for(let i=0;i<GEM_COUNT;i++){
+    const x = (Math.random()-0.5)*WORLD_SIZE*0.85;
+    const z = (Math.random()-0.5)*WORLD_SIZE*0.85;
+    const h = getHeight(x,z);
+    if(h < WATER_LEVEL + 0.3 || h > 4.0) { i--; continue; }
+    const gem = createGem(x,h+0.6,z);
+    scene.add(gem); gems.push(gem);
+  }
+}
+scatterObjects();
+
+// ── SKY DOME ──
+const skyGeo = new THREE.SphereGeometry(130,32,16);
+const skyMat = new THREE.ShaderMaterial({
+  uniforms:{
+    uTime:{value:0},
+    uSunPos:{value:new THREE.Vector3(80,60,40)}
+  },
+  vertexShader:/*glsl*/`
+    varying vec3 vWorldPos;
+    void main(){
+      vec4 wp = modelMatrix * vec4(position,1.0);
+      vWorldPos = wp.xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+    }`,
+  fragmentShader:/*glsl*/`
+    varying vec3 vWorldPos;
+    uniform float uTime;
+    uniform vec3 uSunPos;
+    void main(){
+      vec3 dir = normalize(vWorldPos);
+      float sunAngle = dot(normalize(dir), normalize(uSunPos));
+      float y = dir.y;
+      // gradient: horizon orange → zenith deep blue
+      vec3 top = vec3(0.15, 0.25, 0.7);
+      vec3 horizon = vec3(0.95, 0.55, 0.3);
+      vec3 sky = mix(horizon, top, smoothstep(-0.1, 0.5, y));
+      // sun glow
+      float glow = smoothstep(0.92, 0.98, sunAngle) * 0.4;
+      sky += vec3(1.0, 0.85, 0.5) * glow;
+      // night tint
+      float nightFac = smoothstep(-0.1, -0.35, y);
+      sky = mix(sky, vec3(0.02, 0.03, 0.1), nightFac*0.7);
+      gl_FragColor = vec4(sky, 1.0);
+    }`,
+  side: THREE.BackSide, depthWrite: false
+});
+const sky = new THREE.Mesh(skyGeo, skyMat);
+scene.add(sky);
+
+// ── PLAYER ──
+const player = new THREE.Group();
+const bodyGeo = new THREE.CapsuleGeometry(0.35, 0.9, 4, 8);
+const bodyMat = new THREE.MeshStandardMaterial({color:0xff6644, flatShading:true, roughness:0.5});
+const body = new THREE.Mesh(bodyGeo, bodyMat);
+body.position.y = 0.8;
+body.castShadow = true;
+player.add(body);
+const headGeo = new THREE.IcosahedronGeometry(0.3,0);
+const headMat = new THREE.MeshStandardMaterial({color:0xffcc88, flatShading:true, roughness:0.4});
+const head = new THREE.Mesh(headGeo, headMat);
+head.position.y = 1.55;
+head.castShadow = true;
+player.add(head);
+// eyes
+const eyeGeo = new THREE.SphereGeometry(0.06,4,4);
+const eyeMat = new THREE.MeshStandardMaterial({color:0x000000, roughness:0.1});
+const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
+eyeL.position.set(-0.12, 1.62, 0.26);
+player.add(eyeL);
+const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
+eyeR.position.set(0.12, 1.62, 0.26);
+player.add(eyeR);
+
+player.position.set(0, getHeight(0,0)+0.01, 0);
+scene.add(player);
+
+// ── PLAYER STATE ──
+const state = {
+  pos: player.position.clone(),
+  vel: new THREE.Vector3(),
+  rotY: 0,
+  rotX: 0.2,
+  speed: 8,
+  sprintMul: 1,
+  onGround: true,
+  gemsCollected: 0
+};
+
+// ── INPUT ──
+const keys = {};
+window.addEventListener('keydown',e=>{keys[e.key.toLowerCase()]=true;e.preventDefault()});
+window.addEventListener('keyup',e=>{keys[e.key.toLowerCase()]=false;e.preventDefault()});
+
+let mouseLocked = false;
+renderer.domElement.addEventListener('click',()=>{renderer.domElement.requestPointerLock()});
+document.addEventListener('pointerlockchange',()=>{mouseLocked=document.pointerLockElement===renderer.domElement});
+
+let mx=0,my=0;
+document.addEventListener('mousemove',e=>{if(mouseLocked){mx+=e.movementX*0.002;my-=e.movementY*0.002;my=Math.max(-1.2,Math.min(0.7,my))}});
+
+// ── GAME LOOP ──
+const clock = new THREE.Clock();
+let timeOfDay = 0.25; // 0=midnight 0.25=dawn 0.5=noon 0.75=dusk
+
+function updateHUD(){
+  const p = player.position;
+  document.getElementById('hud-coords').textContent = `POS: ${p.x.toFixed(0)}, ${p.y.toFixed(1)}, ${p.z.toFixed(0)}`;
+  document.getElementById('hud-gems').textContent = `GEMS: ${state.gemsCollected} / ${GEM_COUNT}`;
+  const names = ['NIGHT','DAWN','NOON','DUSK'];
+  const idx = Math.floor(timeOfDay*4)%4;
+  document.getElementById('hud-time').textContent = `TIME: ${names[idx]}`;
+  document.getElementById('hud-speed').textContent = `SPD: ${state.sprintMul.toFixed(1)}`;
+}
+
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.15);
+
+  // ── TIME OF DAY ──
+  timeOfDay += dt * 0.03;
+  if(timeOfDay>1) timeOfDay-=1;
+  const sunAngle = timeOfDay * Math.PI * 2;
+  const sunX = Math.cos(sunAngle)*80;
+  const sunY = Math.sin(sunAngle)*60;
+  sun.position.set(sunX, sunY, 40);
+  sky.material.uniforms.uSunPos.value.copy(sun.position);
+
+  // day/night params
+  const dayFac = Math.max(0, Math.sin(sunAngle));
+  const nightFac = 1 - dayFac;
+
+  scene.fog.color.copy(new THREE.Color().setRGB(0.1*nightFac+0.5*dayFac, 0.15*nightFac+0.7*dayFac, 0.3*nightFac+0.9*dayFac));
+  scene.background.copy(scene.fog.color);
+  ambient.intensity = 0.2 + dayFac*0.6;
+  sun.intensity = 0.3 + dayFac*2.8;
+  hemi.intensity = 0.1 + dayFac*0.5;
+  renderer.toneMappingExposure = 0.5 + dayFac*0.8;
+
+  // ── MOVEMENT ──
+  state.sprintMul = keys['shift'] ? 1.8 : 1.0;
+  const forward = new THREE.Vector3(-Math.sin(state.rotY), 0, -Math.cos(state.rotY));
+  const right = new THREE.Vector3(Math.cos(state.rotY), 0, -Math.sin(state.rotY));
+  const moveDir = new THREE.Vector3();
+
+  if(keys['w']||keys['arrowup']) moveDir.add(forward);
+  if(keys['s']||keys['arrowdown']) moveDir.sub(forward);
+  if(keys['a']||keys['arrowleft']) moveDir.sub(right);
+  if(keys['d']||keys['arrowright']) moveDir.add(right);
+
+  if(moveDir.length()>0) moveDir.normalize();
+
+  state.rotY += mx * 2.5;
+  state.rotX += my * 1.8;
+  state.rotX = Math.max(-1.2, Math.min(0.7, state.rotX));
+  mx*=0.85; my*=0.85;
+
+  const targetVel = moveDir.clone().multiplyScalar(state.speed * state.sprintMul);
+  state.vel.lerp(targetVel, 10*dt);
+
+  // gravity + ground clamp
+  const terrainH = getHeight(player.position.x, player.position.z);
+  state.vel.y -= 15*dt;
+  player.position.x += state.vel.x*dt;
+  player.position.z += state.vel.z*dt;
+  player.position.y += state.vel.y*dt;
+
+  if(player.position.y <= terrainH + 0.05){
+    player.position.y = terrainH + 0.05;
+    state.vel.y = 0;
+    state.onGround = true;
+  } else {
+    state.onGround = false;
+  }
+
+  // jump
+  if(state.onGround && keys[' ']){
+    state.vel.y = 7;
+    state.onGround = false;
+  }
+
+  // world bounds
+  const half = WORLD_SIZE/2 - 2;
+  player.position.x = Math.max(-half, Math.min(half, player.position.x));
+  player.position.z = Math.max(-half, Math.min(half, player.position.z));
+  if(player.position.y < -15) player.position.y = terrainH + 2;
+
+  player.rotation.y = state.rotY;
+
+  // ── THIRD-PERSON CAMERA ──
+  const camDist = 10;
+  const camHeight = 5;
+  const camTarget = player.position.clone();
+  camTarget.y += 1.2;
+  const camOffset = new THREE.Vector3(
+    Math.sin(state.rotY)*camDist,
+    camHeight + state.rotX*6,
+    Math.cos(state.rotY)*camDist
+  );
+  const desiredCamPos = camTarget.clone().add(camOffset);
+  // terrain clamp for camera
+  const camTerrainH = getHeight(desiredCamPos.x, desiredCamPos.z);
+  if(desiredCamPos.y < camTerrainH + 1.5) desiredCamPos.y = camTerrainH + 1.5;
+
+  camera.position.lerp(desiredCamPos, 6*dt);
+  camera.lookAt(camTarget);
+
+  // ── GEM COLLECTION ──
+  for(const gem of gems){
+    if(gem.userData.collected) continue;
+    const dist = player.position.distanceTo(gem.position);
+    if(dist < 1.2){
+      gem.userData.collected = true;
+      gem.visible = false;
+      state.gemsCollected++;
+      // burst particles
+      for(let j=0;j<8;j++){
+        const pGeo = new THREE.SphereGeometry(0.06,3,3);
+        const pMat = new THREE.MeshStandardMaterial({color:gem.children[0].material.color,flatShading:true,emissive:gem.children[0].material.color});
+        const particle = new THREE.Mesh(pGeo,pMat);
+        particle.position.copy(gem.position);
+        const vel = new THREE.Vector3((Math.random()-0.5)*3,Math.random()*4,(Math.random()-0.5)*3);
+        scene.add(particle);
+        let life=0;
+        function animParticle(){
+          life+=0.016;
+          particle.position.add(vel.clone().multiplyScalar(0.016));
+          vel.y-=12*0.016;
+          particle.scale.setScalar(1-life*1.5);
+          if(life<0.7) requestAnimationFrame(animParticle);
+          else scene.remove(particle);
+        }
+        animParticle();
+      }
+    }
+    // float animation
+    if(!gem.userData.collected){
+      gem.position.y = gem.userData.baseY + Math.sin(Date.now()*0.003 + gem.userData.phase)*0.15;
+      gem.rotation.y += dt*1.5;
+      gem.children[1].rotation.z += dt*2;
+    }
+  }
+
+  // ── SKY TIME ──
+  sky.material.uniforms.uTime.value += dt;
+
+  updateHUD();
+}
+
+// ── RESIZE ──
+window.addEventListener('resize',()=>{
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ── LAUNCH ──
+setTimeout(()=>{
+  document.getElementById('loader').classList.add('hide');
+  setTimeout(()=>document.getElementById('loader').remove(), 500);
+}, 600);
+
+animate();
+</script>
+</body>
+</html>
