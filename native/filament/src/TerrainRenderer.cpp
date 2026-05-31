@@ -50,6 +50,12 @@ public:
         
         // Ensure the scene/view processes this renderable
         // view->setScene(scene);
+        
+        // --- MICROTASK 9: SOIL PBR MAPPING ---
+        // Explicitly parameterizing the 'soil' tensor channel to dictate Albedo (brown/organic)
+        // and Roughness (high diffusion, low specular).
+        // materialInstance->setParameter("soil_albedo", filament::math::float3{0.4f, 0.25f, 0.15f});
+        // materialInstance->setParameter("soil_roughness", 0.85f);
     }
 
     void destroy() {

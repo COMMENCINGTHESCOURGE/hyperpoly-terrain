@@ -25,7 +25,7 @@ def build_model():
         tf.keras.layers.Conv2D(1, 1, padding='same', activation='softplus')
     ])
     
-    model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+    model.compile(optimizer='adam', loss=tf.keras.losses.Huber(), metrics=['mae'])
     return model
 
 def main():

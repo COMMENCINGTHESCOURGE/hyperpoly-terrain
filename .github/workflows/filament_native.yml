@@ -1,0 +1,25 @@
+name: Native Filament Build
+on:
+  push:
+    branches: [ "native", "main", "master" ]
+  pull_request:
+    branches: [ "native", "main", "master" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake ninja-build libvulkan-dev
+        
+    - name: Configure CMake
+      run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+      working-directory: ./native
+
+    - name: Build TerrainRenderer
+      run: cmake --build build
+      working-directory: ./native

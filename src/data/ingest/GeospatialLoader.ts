@@ -29,8 +29,13 @@ export class GeospatialLoader {
             EarthEngine.getLandCover(bbox)
         ]);
 
+        const byteLength = resolution * resolution * 6 * 4; // 6 channels, 4 bytes per float
+        const sharedBuffer = new SharedArrayBuffer(byteLength);
+        const floatView = new Float32Array(sharedBuffer);
+
         // Translate raw Earth observation data to the 6-channel thermodynamic representation
         const tensor = MaterialTensor.compose({
+            buffer: sharedBuffer,
             rock: rock.mineralDensity,
             soil: soil.textureClass,
             sand: this.deriveSandFraction(soil, landcover),
