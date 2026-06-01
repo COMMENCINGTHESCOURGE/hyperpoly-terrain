@@ -25,13 +25,14 @@ modules:
     shader: "src/compute/diffusion.wgsl"
     reads: [rock, soil, sand, water, ice, organic]
     writes: [soil, sand]
+    requires: [advection]
     flux_producer: false
 
   semi_implicit_conservation:
     shader: "src/compute/semi_implicit_conservation.wgsl"
     reads: [water, sand]  # minimal: only channels that were written
     writes: [water, sand, soil, rock, ice, organic]  # renormalization touches all
-    requires: [advection]  # must run after any flux_producer
+    requires: [advection, diffusion]  # must run after any flux_producer and modifiers
     injection_rule: "auto-on-write"  # compiler injects when water/sand are mutated
 
   qef_extract:
