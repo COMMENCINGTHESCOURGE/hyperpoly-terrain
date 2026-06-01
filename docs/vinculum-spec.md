@@ -1,60 +1,53 @@
-# Vinculum Operator Spec: Dependency Graph DSL
+# vinculum-spec.md — MANIFOLD Dependency Graph Schema
+# Version: 0.1.0
+# Purpose: Declare compute module dependencies, channel I/O, and compiler injection rules
 
-> *"Safe, decentralized tensor updates require strict causal ordering. Vinculum enforces the graph."*
-
-The Vinculum Scheduler is the core mechanism that prevents data races when multiple compute kernels (erosion, thermal weathering, biome growth, swarms) attempt to modify the 6-channel material tensor simultaneously.
-
-## The DSL Schema (YAML)
-
-Pipeline execution is defined via a `vinculum.yml` graph. Kernels declare their read/write channels, and the compiler builds a conflict-free execution DAG.
-
-```yaml
-version: "1.0"
-pipeline: "manifold_standard_erosion"
-
+version: "0.1.0"
+engine: "hyperpoly-terrain"
 channels:
-  - id: 0
-    name: "Density"
-  - id: 1
-    name: "Cohesion"
-  - id: 2
-    name: "Permeability"
-  - id: 3
-    name: "Water"
-  - id: 4
-    name: "Sediment"
-  - id: 5
-    name: "Oxidation"
+  - rock
+  - soil
+  - sand
+  - water
+  - ice
+  - organic
 
-operators:
-  - name: "hydraulic_erosion"
-    kernel: "erosion/hydraulic.wgsl"
-    reads:  ["Density", "Cohesion", "Water", "Sediment"]
-    writes: ["Cohesion", "Water", "Sediment"]
-    cost_estimate: 450 # arbitrary compute units for load balancing
+# Module registry: each compute pass declares its I/O contract
+modules:
+  advection:
+    shader: "src/compute/advection.wgsl"
+    reads: [water, sand, soil]
+    writes: [water, sand]
+    flux_producer: true  # marks this module as generating flux_in/flux_out
+    injection_points: [pre-conservation]
 
-  - name: "thermal_weathering"
-    kernel: "weathering/thermal.wgsl"
-    reads:  ["Density", "Cohesion"]
-    writes: ["Cohesion", "Oxidation"]
-    cost_estimate: 200
+  diffusion:
+    shader: "src/compute/diffusion.wgsl"
+    reads: [rock, soil, sand, water, ice, organic]
+    writes: [soil, sand]
+    flux_producer: false
 
-  - name: "sediment_compaction"
-    kernel: "geology/compaction.wgsl"
-    reads:  ["Sediment", "Density", "Cohesion"]
-    writes: ["Density", "Cohesion", "Sediment"]
-    cost_estimate: 300
+  semi_implicit_conservation:
+    shader: "src/compute/semi_implicit_conservation.wgsl"
+    reads: [water, sand]  # minimal: only channels that were written
+    writes: [water, sand, soil, rock, ice, organic]  # renormalization touches all
+    requires: [advection]  # must run after any flux_producer
+    injection_rule: "auto-on-write"  # compiler injects when water/sand are mutated
 
-execution:
-  # The Vinculum compiler will automatically deduce that 'hydraulic_erosion' 
-  # and 'thermal_weathering' CANNOT run in parallel because they both mutate 'Cohesion'.
-  # It will construct the following safe execution sequence:
-  # 1. hydraulic_erosion
-  # 2. thermal_weathering
-  # 3. sediment_compaction (Depends on updated Cohesion and Sediment)
-```
+  qef_extract:
+    shader: "src/compute/qef_solve.wgsl"
+    reads: [rock, soil, sand, water, ice, organic]
+    writes: []  # read-only: generates mesh, doesn't mutate tensor
+    depends_on_state: "post-conservation"
 
-## Compiler Rules
-1. **Zero Data Races:** If Operator A and Operator B both write to channel `N`, they cannot be scheduled in the same parallel dispatch group.
-2. **Mass Conservation Check:** If an operator mutates the mobile phases (`Water`, `Sediment`), the scheduler automatically injects the `semi_implicit_conservation.wgsl` pass immediately after it.
-3. **Ghost Voxel Resolution:** At the end of every complete dispatch frame, the Vinculum scheduler triggers a tile boundary sync (resolving `boundary_flux`).
+# Global compiler rules
+compiler:
+  race_detection:
+    strategy: "static-dag"  # build dependency DAG at compile-time
+    conflict_resolution: "fail-fast"  # reject specs with write-write conflicts on same channel
+  injection:
+    auto_conserve: true  # inject semi_implicit_conservation after any flux_producer writes water/sand
+    substep_hint: "high-flux"  # suggest adaptive substepping when flux_out > threshold
+  optimization:
+    fuse_reads: true  # coalesce multiple reads of same channel into single buffer fetch
+    prune_unused: true  # remove modules whose outputs aren't consumed downstream
