@@ -76,13 +76,31 @@ export class HydraulicPipeline {
 
         // Pre-allocated zero buffer for resetting indirect dispatch state
         this._dispatchInit = new Uint32Array([0, 1, 1]);  // x=0, y=1, z=1
+
+        // Meta-dispatcher budget
+        this._budgetMax = budgetMax;
+        this._metaParams = new Float32Array([budgetMax, 0.85, 0.3, 0.0]);
+        this._budgetedQueue = this._createStorage(MAX_ACTIVE_BRICKS * 4);  // u32
+        this._brickPriority = this._createStorage(TOTAL_BRICK_SLICES * 4); // f32
+
+        // Camera position uniform for LOD culling (vec3<f32> = 12 bytes)
+        this._cameraPos = new Float32Array([128.0, 64.0, 128.0]);
+        this.cameraBuffer = device.createBuffer({
+            size: 16,  // vec3 padded to 16 bytes
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
+        device.queue.writeBuffer(this.cameraBuffer, 0, this._cameraPos);
+
+        // Reset queue pipeline (GPU-side, eliminates host writeBuffer)
+        this._resetPipeline = null;
+        this._resetBindGroup = null;
     }
 
     // ==========================================================================
     // Initialization — must be called after WGSL sources are fetched
     // ==========================================================================
 
-    async init(pass1WGSL, pass2WGSL) {
+    async init(pass1WGSL, pass2WGSL, metaDispatchWGSL) {
         const device = this.device;
 
         const pass1Module = device.createShaderModule({ code: pass1WGSL });
@@ -93,12 +111,54 @@ export class HydraulicPipeline {
             compute: { module: pass1Module, entryPoint: 'cull_active_bricks' },
         });
 
+        // --- Reset Queue Pipeline ---
+        const resetModule = device.createShaderModule({
+            code: await fetch('compute/reset_queue.wgsl').then(r => r.text()),
+        });
+        this._resetPipeline = device.createComputePipeline({
+            layout: 'auto',
+            compute: { module: resetModule, entryPoint: 'reset_pass' },
+        });
+        this._resetBindGroup = device.createBindGroup({
+            layout: this._resetPipeline.getBindGroupLayout(0),
+            entries: [
+                { binding: 0, resource: { buffer: this.budgetCounter }},
+            ],
+        });
+
+        // --- Meta-Dispatcher Pipeline ---
+        if (metaDispatchWGSL) {
+            const metaModule = device.createShaderModule({ code: metaDispatchWGSL });
+            this._metaPipeline = device.createComputePipeline({
+                layout: 'auto',
+                compute: { module: metaModule, entryPoint: 'meta_dispatcher' },
+            });
+            this._metaBindGroup = device.createBindGroup({
+                layout: this._metaPipeline.getBindGroupLayout(0),
+                entries: [
+                    { binding: 0, resource: { buffer: this.indirectBuffer }},      // compacted_queue
+                    { binding: 1, resource: { buffer: this.budgetCounter  }},       // queue_count
+                    { binding: 2, resource: { buffer: this._brickPriority }},       // brick_priority
+                    { binding: 3, resource: { buffer: this._budgetedQueue }},       // budgeted_queue
+                    { binding: 4, resource: { buffer: this.indirectBuffer }},       // dispatch_args (reuse mem)
+                ],
+            });
+            // Meta params uniform
+            this._metaUniformBuffer = device.createBuffer({
+                size: 16,
+                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            });
+            device.queue.writeBuffer(this._metaUniformBuffer, 0, this._metaParams);
+        }
+
         this.pass2Pipeline = device.createComputePipeline({
             layout: 'auto',
             compute: { module: pass2Module, entryPoint: 'hydraulic_solver' },
         });
 
         // --- Pass 1 Bind Group ---
+        // bindings: 0=meta_buffer, 1=brick_state, 2=raw_queue, 3=queue_count,
+        //           4=dispatch_args, 5=sched_params, 6=camera_pos
         this.pass1BindGroup = device.createBindGroup({
             layout: this.pass1Pipeline.getBindGroupLayout(0),
             entries: [
@@ -106,6 +166,7 @@ export class HydraulicPipeline {
                 { binding: 1, resource: { buffer: this.indirectBuffer }},
                 { binding: 2, resource: { buffer: this.activeList     }},
                 { binding: 3, resource: { buffer: this.budgetCounter  }},
+                { binding: 6, resource: { buffer: this.cameraBuffer   }},
             ],
         });
 
@@ -154,17 +215,28 @@ export class HydraulicPipeline {
     // One simulation step (call per frame)
     // ==========================================================================
 
-    step() {
+    step(cameraX, cameraY, cameraZ) {
         const device = this.device;
         const queue  = device.queue;
 
-        // Reset indirect buffer atomically: x=0, y=1, z=1 (single write, no window)
-        queue.writeBuffer(this.indirectBuffer, 0, this._dispatchInit);
-
-        // Reset budget counter for this frame
-        queue.writeBuffer(this.budgetCounter, 0, new Uint32Array([0]));
-
         const cmd = device.createCommandEncoder();
+
+        // Update camera position for LOD culling
+        this._cameraPos[0] = cameraX ?? this._cameraPos[0];
+        this._cameraPos[1] = cameraY ?? this._cameraPos[1];
+        this._cameraPos[2] = cameraZ ?? this._cameraPos[2];
+        queue.writeBuffer(this.cameraBuffer, 0, this._cameraPos);
+
+        // ========================================================================
+        // Pass 0: GPU-side queue reset — replaces host writeBuffer
+        // ========================================================================
+        {
+            const pass = cmd.beginComputePass();
+            pass.setPipeline(this._resetPipeline);
+            pass.setBindGroup(0, this._resetBindGroup);
+            pass.dispatchWorkgroups(1, 1, 1);
+            pass.end();
+        }
 
         // ========================================================================
         // Pass 1: Culling — determine which bricks are active
@@ -177,6 +249,21 @@ export class HydraulicPipeline {
 
             const workgroups = Math.ceil(TOTAL_BRICK_SLICES / 64);
             pass.dispatchWorkgroups(workgroups, 1, 1);
+            pass.end();
+        }
+
+        // ========================================================================
+        // Pass 1b: Meta-dispatcher — budget-constrain the active list
+        // ========================================================================
+        if (this._metaPipeline) {
+            // Update meta params uniform
+            queue.writeBuffer(this._metaUniformBuffer, 0, this._metaParams);
+
+            const pass = cmd.beginComputePass();
+            pass.setPipeline(this._metaPipeline);
+            pass.setBindGroup(0, this._metaBindGroup);
+            // Dispatch enough WGs to cover MAX_ACTIVE_BRICKS (65536) at 256 threads ea
+            pass.dispatchWorkgroups(256, 1, 1);
             pass.end();
         }
 
@@ -256,10 +343,13 @@ export class HydraulicPipeline {
 // =============================================================================
 
 export async function createHydraulicPipeline(device, budgetMax) {
-    const pass1WGSL = await fetch('compute/pass1_culling.wgsl').then(r => r.text());
-    const pass2WGSL = await fetch('compute/pass2_solver.wgsl').then(r => r.text());
+    const [pass1WGSL, pass2WGSL, metaDispatchWGSL] = await Promise.all([
+        fetch('compute/pass1_culling.wgsl').then(r => r.text()),
+        fetch('compute/pass2_solver.wgsl').then(r => r.text()),
+        fetch('compute/meta_dispatch.wgsl').then(r => r.text()),
+    ]);
 
     const pipeline = new HydraulicPipeline(device, budgetMax);
-    await pipeline.init(pass1WGSL, pass2WGSL);
+    await pipeline.init(pass1WGSL, pass2WGSL, metaDispatchWGSL);
     return pipeline;
 }
