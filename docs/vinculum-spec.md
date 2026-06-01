@@ -11,6 +11,12 @@ channels:
   - water
   - ice
   - organic
+  - biomass_prey
+  - biomass_pred
+  - spore_density
+  - terrain_stress
+  - thermal_flux
+  - _pad
 
 # Module registry: each compute pass declares its I/O contract
 modules:
@@ -18,6 +24,7 @@ modules:
     shader: "src/compute/advection.wgsl"
     reads: [water, sand, soil]
     writes: [water, sand]
+    requires: [csg_terraforming]
     flux_producer: true  # marks this module as generating flux_in/flux_out
     injection_points: [pre-conservation]
 
@@ -35,9 +42,23 @@ modules:
     requires: [advection, diffusion]  # must run after any flux_producer and modifiers
     injection_rule: "auto-on-write"  # compiler injects when water/sand are mutated
 
+  ecosystem_lotka_volterra:
+    shader: "src/compute/lotka_volterra.wgsl"
+    reads: [water, organic, biomass_prey, biomass_pred, spore_density]
+    writes: [water, organic, biomass_prey, biomass_pred, spore_density]
+    requires: [diffusion]
+    flux_producer: true
+    
+  csg_terraforming:
+    shader: "src/compute/csg_terraforming.wgsl"
+    reads: [rock, soil, sand, ice, terrain_stress, thermal_flux, biomass_prey]
+    writes: [rock, soil, sand, terrain_stress, thermal_flux, biomass_prey]
+    requires: []
+    flux_producer: false
+
   qef_extract:
     shader: "src/compute/qef_solve.wgsl"
-    reads: [rock, soil, sand, water, ice, organic]
+    reads: [rock, soil, sand, water, ice, organic, biomass_prey, biomass_pred, spore_density, terrain_stress, thermal_flux]
     writes: []  # read-only: generates mesh, doesn't mutate tensor
     depends_on_state: "post-conservation"
 

@@ -3,10 +3,10 @@
 
 export const dispatchSequence = [
   {
-    name: 'advection',
-    shader: 'src/compute/advection.wgsl',
+    name: 'csg_terraforming',
+    shader: 'src/compute/csg_terraforming.wgsl',
     bufferRoles: { input: 'state_A', output: 'state_B' },
-    binds: () => setupBindGroup('advection')
+    binds: () => setupBindGroup('csg_terraforming')
   },
   {
     name: 'qef_extract',
@@ -15,10 +15,22 @@ export const dispatchSequence = [
     binds: () => setupBindGroup('qef_extract')
   },
   {
+    name: 'advection',
+    shader: 'src/compute/advection.wgsl',
+    bufferRoles: { input: 'state_B', output: 'state_A' },
+    binds: () => setupBindGroup('advection')
+  },
+  {
     name: 'diffusion',
     shader: 'src/compute/diffusion.wgsl',
-    bufferRoles: { input: 'state_B', output: 'state_A' },
+    bufferRoles: { input: 'state_A', output: 'state_B' },
     binds: () => setupBindGroup('diffusion')
+  },
+  {
+    name: 'ecosystem_lotka_volterra',
+    shader: 'src/compute/lotka_volterra.wgsl',
+    bufferRoles: { input: 'state_B', output: 'state_A' },
+    binds: () => setupBindGroup('ecosystem_lotka_volterra')
   },
   {
     name: 'semi_implicit_conservation',

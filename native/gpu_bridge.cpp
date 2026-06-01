@@ -3,14 +3,22 @@
 #include <cstdint>
 #include <cstddef>
 
-// MANIFOLD 6-Channel Tensor
-struct alignas(32) Tensor6 {
-    float density;
-    float cohesion;
-    float permeability;
+// MANIFOLD 12-Channel Tensor (v2.0 Mapping)
+struct alignas(16) Tensor12 {
+    // Conservative
+    float rock;
+    float soil;
+    float sand;
     float water;
-    float sediment;
-    float oxidation;
+    float ice;
+    float organic;
+    // Additive
+    float biomass_prey;
+    float biomass_pred;
+    float spore_density;
+    float terrain_stress;
+    float thermal_flux;
+    float _pad;
 };
 
 class GPUBridge {
@@ -26,7 +34,7 @@ public:
         // After this, CPU never touches this memory again.
         
         for(size_t i = 0; i < size; ++i) {
-            host_buffer[i].density = 1.0f; // Mock noise
+            host_buffer[i].rock = 1.0f; // Mock noise
         }
         
         std::cout << "[GPUBridge] Upload Complete. Locking Buffer.\n";
@@ -37,7 +45,7 @@ public:
     }
 
 private:
-    std::vector<Tensor6> host_buffer;
+    std::vector<Tensor12> host_buffer;
     size_t size;
 };
 
