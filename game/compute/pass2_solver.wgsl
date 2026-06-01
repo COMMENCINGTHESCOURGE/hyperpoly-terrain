@@ -1,3 +1,10 @@
+// vinculum: advection_coherence / turbulent_diffusion
+//   Measures how much of the advection field preserves laminar flow vs.
+//   developing eddies. Drives erosion rate modulation.
+// layer: simulation
+// domain: terrain (maps to economy as liquidity / volatility,
+//          AI as training_stability / gradient_noise)
+//
 // =============================================================================
 // Phase 2: Advection Pass — 16³ brick, FP16-quantized SoA, single-channel tiling
 // =============================================================================

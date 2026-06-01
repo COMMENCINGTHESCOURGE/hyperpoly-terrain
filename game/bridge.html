@@ -1,0 +1,242 @@
+/**
+ * HYPERPOLY BRIDGE ENTRY POINT — Wires the WebGPU compute pipeline
+ * to a renderable page. Hybrid architecture:
+ *   - WebGPU canvas (back): renders the dual-contour terrain mesh
+ *   - Three.js canvas (front, transparent bg): sky, HUD, overlay elements
+ * 
+ * This replaces the standalone index.html demo. The compute pipeline
+ * produces vertex/index buffers; this file consumes them.
+ */
+
+import { HyperPolyGeology } from './compute/hyperpoly_geology.js';
+import { HydraulicPipeline, createHydraulicPipeline } from './compute/hydraulic_host.js';
+import { Phase5Extractor } from './compute/phase5_extractor/phase5_host.js';
+import { Phase5Draw } from './compute/phase5_extractor/phase5_draw.js';
+import { PlayableWorld } from './compute/playable_world.js';
+import { TerrainRenderer } from './render/terrain_renderer.js';
+import * as THREE from 'three';
+
+// ── Canvas setup ──────────────────────────────────────────
+const wgpuCanvas = document.getElementById('wgpu-canvas');
+const hudCanvas  = document.getElementById('hud-canvas');
+
+wgpuCanvas.width  = window.innerWidth;
+wgpuCanvas.height = window.innerHeight;
+hudCanvas.width   = window.innerWidth;
+hudCanvas.height  = window.innerHeight;
+
+// ── UI Elements ──
+const $ = id => document.getElementById(id);
+
+async function main() {
+    // ════════════════════════════════════════════════════════
+    // 1. BOOT WEBGPU
+    // ════════════════════════════════════════════════════════
+    const adapter = await navigator.gpu.requestAdapter();
+    if (!adapter) {
+        document.getElementById('loader').textContent = 'WebGPU not supported. Use Chrome/Edge 113+ or Firefox 141+.';
+        return;
+    }
+    const device = await adapter.requestDevice();
+    const context = wgpuCanvas.getContext('webgpu');
+    const format = navigator.gpu.getPreferredCanvasFormat();
+    context.configure({
+        device,
+        format,
+        alphaMode: 'opaque',
+    });
+
+    // ════════════════════════════════════════════════════════
+    // 2. DEPTH TEXTURE
+    // ════════════════════════════════════════════════════════
+    const depthTexture = device.createTexture({
+        size: [window.innerWidth, window.innerHeight],
+        format: 'depth24plus',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+
+    // ════════════════════════════════════════════════════════
+    // 3. INIT COMPUTE PIPELINE
+    // ════════════════════════════════════════════════════════
+    // shellModelGenerator produces Float32Array[6] per brick
+    function shellModelGenerator(bx, by, bz) {
+        const nx = bx / 16 - 0.5, ny = by / 16 - 0.5, nz = bz / 16 - 0.5;
+        const d = 0.5 + 0.5 * Math.sin(nx * 3 + ny * 2 + nz * 4);
+        const c = 0.3 + 0.3 * Math.cos(nx * 2 + ny * 5 + nz * 3);
+        return new Float32Array([
+            d,               // density
+            c,               // cohesion
+            0.5 - c * 0.3,   // perm_x
+            0.5 - c * 0.3,   // perm_y
+            0.5 - c * 0.3,   // perm_z
+            0.0,             // water
+        ]);
+    }
+
+    const world = new PlayableWorld(wgpuCanvas, device);
+    world._wgpuContext = context;
+    world._depthTexture = depthTexture;
+
+    // Fetch WGSL sources
+    const base = 'compute';
+    const [hermiteWGSL, qefWGSL, lodWGSL, deltaWGSL, topologyWGSL, stitchWGSL, editWGSL, renderWGSL] = 
+        await Promise.all([
+            fetch(`${base}/phase5_extractor/phase5_hermite.wgsl`).then(r => r.text()),
+            fetch(`${base}/phase5_extractor/phase5_qef.wgsl`).then(r => r.text()),
+            fetch(`${base}/phase5_extractor/phase5_lod.wgsl`).then(r => r.text()),
+            fetch(`${base}/phase5_extractor/phase5_delta.wgsl`).then(r => r.text()),
+            fetch(`${base}/phase5_extractor/phase5_topology.wgsl`).then(r => r.text()),
+            fetch(`${base}/phase5_extractor/phase5_stitch.wgsl`).then(r => r.text()),
+            fetch(`${base}/phase6_edit/phase6_edit.wgsl`).then(r => r.text()),
+            fetch(`render/render_terrain.wgsl`).then(r => r.text()),
+        ]);
+
+    // ════════════════════════════════════════════════════════
+    // 4. INIT RENDERER
+    // ════════════════════════════════════════════════════════
+    const terrainRenderer = new TerrainRenderer(device, context, depthTexture);
+    await terrainRenderer.init(renderWGSL);
+    world._terrainRenderer = terrainRenderer;
+
+    // ════════════════════════════════════════════════════════
+    // 5. INIT WORLD (uploads terrain, creates pipelines)
+    // ════════════════════════════════════════════════════════
+    const wgslSources = { hermite: hermiteWGSL, qef: qefWGSL, lod: lodWGSL,
+                          delta: deltaWGSL, topology: topologyWGSL, stitch: stitchWGSL, edit: editWGSL };
+    await world.init(shellModelGenerator, wgslSources);
+
+    // ════════════════════════════════════════════════════════
+    // 6. CAMERA CONTROLS (orbit for now)
+    // ════════════════════════════════════════════════════════
+    let azimuth = 0, elevation = 0.5, orbitDist = 30;
+    let mouseDown = false, lastMX = 0, lastMY = 0;
+
+    wgpuCanvas.addEventListener('mousedown', e => { mouseDown = true; lastMX = e.clientX; lastMY = e.clientY; });
+    window.addEventListener('mouseup', () => mouseDown = false);
+    window.addEventListener('mousemove', e => {
+        if (!mouseDown) return;
+        const dx = e.clientX - lastMX, dy = e.clientY - lastMY;
+        azimuth -= dx * 0.005;
+        elevation = Math.max(0.1, Math.min(1.4, elevation - dy * 0.005));
+        lastMX = e.clientX; lastMY = e.clientY;
+    });
+    wgpuCanvas.addEventListener('wheel', e => {
+        orbitDist = Math.max(5, Math.min(80, orbitDist + e.deltaY * 0.05));
+    }, { passive: true });
+
+    function getViewProjMatrix() {
+        const cx = orbitDist * Math.cos(elevation) * Math.sin(azimuth);
+        const cy = orbitDist * Math.sin(elevation);
+        const cz = orbitDist * Math.cos(elevation) * Math.cos(azimuth);
+        const center = [0, 5, 0];
+        const eye = [cx + center[0], cy + center[1], cz + center[2]];
+        const up = [0, 1, 0];
+
+        // LookAt matrix
+        const fwd = [center[0] - eye[0], center[1] - eye[1], center[2] - eye[2]];
+        const flen = Math.sqrt(fwd[0]**2 + fwd[1]**2 + fwd[2]**2);
+        if (flen < 1e-8) return null;
+        const F = [fwd[0]/flen, fwd[1]/flen, fwd[2]/flen];
+        const R = [
+            up[1] * F[2] - up[2] * F[1],
+            up[2] * F[0] - up[0] * F[2],
+            up[0] * F[1] - up[1] * F[0],
+        ];
+        const rlen = Math.sqrt(R[0]**2 + R[1]**2 + R[2]**2);
+        if (rlen < 1e-8) return null;
+        for (let i = 0; i < 3; i++) R[i] /= rlen;
+        const U = [
+            F[1] * R[2] - F[2] * R[1],
+            F[2] * R[0] - F[0] * R[2],
+            F[0] * R[1] - F[1] * R[0],
+        ];
+
+        const view = new Float32Array(16);
+        view[0] = R[0]; view[1] = U[0]; view[2] = -F[0]; view[3] = 0;
+        view[4] = R[1]; view[5] = U[1]; view[6] = -F[1]; view[7] = 0;
+        view[8] = R[2]; view[9] = U[2]; view[10] = -F[2]; view[11] = 0;
+        view[12] = -(R[0]*eye[0] + R[1]*eye[1] + R[2]*eye[2]);
+        view[13] = -(U[0]*eye[0] + U[1]*eye[1] + U[2]*eye[2]);
+        view[14] =  (F[0]*eye[0] + F[1]*eye[1] + F[2]*eye[2]);
+        view[15] = 1;
+
+        // Perspective projection
+        const fov = 70 * Math.PI / 180;
+        const aspect = window.innerWidth / window.innerHeight;
+        const near = 0.5, far = 300;
+        const t = Math.tan(fov / 2);
+        const proj = new Float32Array(16);
+        proj[0] = 1 / (aspect * t); proj[1] = 0; proj[2] = 0; proj[3] = 0;
+        proj[4] = 0; proj[5] = 1 / t; proj[6] = 0; proj[7] = 0;
+        proj[8] = 0; proj[9] = 0; proj[10] = -(far + near) / (far - near); proj[11] = -1;
+        proj[12] = 0; proj[13] = 0; proj[14] = -2 * far * near / (far - near); proj[15] = 0;
+
+        // viewProj = proj * view
+        const vp = new Float32Array(16);
+        for (let row = 0; row < 4; row++) {
+            for (let col = 0; col < 4; col++) {
+                vp[col * 4 + row] =
+                    proj[row] * view[col * 4] +
+                    proj[row + 4] * view[col * 4 + 1] +
+                    proj[row + 8] * view[col * 4 + 2] +
+                    proj[row + 12] * view[col * 4 + 3];
+            }
+        }
+        return vp;
+    }
+
+    // ════════════════════════════════════════════════════════
+    // 7. RESIZE HANDLER
+    // ════════════════════════════════════════════════════════
+    window.addEventListener('resize', () => {
+        wgpuCanvas.width = window.innerWidth;
+        wgpuCanvas.height = window.innerHeight;
+        hudCanvas.width = window.innerWidth;
+        hudCanvas.height = window.innerHeight;
+    });
+
+    // ════════════════════════════════════════════════════════
+    // 8. FRAME LOOP
+    // ════════════════════════════════════════════════════════
+    let lastTime = performance.now();
+
+    function frame(time) {
+        const dt = (time - lastTime) / 1000;
+        lastTime = time;
+
+        // Step simulation (fixed 20Hz timestep)
+        world.frame(time);
+
+        // Build view-projection matrix from orbit controls
+        const vp = getViewProjMatrix();
+        if (vp) {
+            // Camera position in world space
+            const cx = orbitDist * Math.cos(elevation) * Math.sin(azimuth);
+            const cy = orbitDist * Math.sin(elevation);
+            const cz = orbitDist * Math.cos(elevation) * Math.cos(azimuth);
+            terrainRenderer.setViewProj(vp, [cx, cy, cz], time / 1000);
+        }
+
+        // Render terrain via WebGPU
+        const encoder = device.createCommandEncoder();
+        terrainRenderer.render(encoder, world.extractor.getVertexBuffer(), world.draw);
+        device.queue.submit([encoder.finish()]);
+
+        // Update HUD
+        $('hud-coords').textContent = `POS: ${(azimuth * 180 / Math.PI).toFixed(0)}° ${(elevation * 180 / Math.PI).toFixed(0)}° DIST: ${orbitDist.toFixed(1)}`;
+        $('hud-gems').textContent = `MESH: ${world.draw?.drawArgsBuffer ? 'ACTIVE' : 'PENDING'}`;
+        $('hud-time').textContent = `FPS: ${(1 / Math.max(dt, 0.001)).toFixed(0)}`;
+
+        requestAnimationFrame(frame);
+    }
+
+    // ── LAUNCH ──
+    document.getElementById('loader').classList.add('hide');
+    setTimeout(() => document.getElementById('loader').remove(), 500);
+    requestAnimationFrame(frame);
+}
+
+main().catch(err => {
+    console.error(err);
+    document.getElementById('loader').textContent = `Error: ${err.message}`;
+});

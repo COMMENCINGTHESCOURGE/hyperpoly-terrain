@@ -3,478 +3,704 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Hyper Poly Openworld</title>
+<title>HYPERPOLY — The Block / Vault Compound 7</title>
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-html,body{overflow:hidden;background:#000;font-family:'Courier New',monospace}
-canvas{display:block}
-#hud{position:fixed;top:16px;left:16px;color:#fff;font-size:13px;pointer-events:none;z-index:10;text-shadow:0 0 8px rgba(0,0,0,.8)}
-#hud div{margin:2px 0;opacity:.85}
-#crosshair{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:8px;height:8px;pointer-events:none;z-index:10}
-#crosshair::before,#crosshair::after{content:'';position:absolute;background:rgba(255,255,255,.6)}
-#crosshair::before{width:2px;height:100%;left:3px;top:0}
-#crosshair::after{width:100%;height:2px;left:0;top:3px}
-#loader{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;z-index:100;background:rgba(0,0,0,.9);transition:opacity .5s}
-#loader.hide{opacity:0;pointer-events:none}
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; font-family: monospace; }
+  canvas#wgpu-canvas { display: block; position: fixed; top: 0; left: 0; z-index: 1; }
+  canvas#hud-canvas { display: block; position: fixed; top: 0; left: 0; z-index: 2; pointer-events: none; }
+  #overlay {
+    position: fixed; inset: 0; z-index: 10;
+    background: rgba(0,0,0,0.85);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: #aac; cursor: pointer; gap: 12px;
+  }
+  #overlay h2 { font-size: 22px; letter-spacing: 4px; color: #7af; }
+  #overlay p { font-size: 13px; color: #5a7a9a; }
+  #overlay .btn {
+    margin-top: 10px; padding: 10px 28px; border: 1px solid #4af;
+    color: #4af; font-size: 14px; letter-spacing: 2px;
+    background: transparent; cursor: pointer; font-family: monospace;
+  }
+  #overlay .btn:hover { background: rgba(64,170,255,0.1); }
+  #hud {
+    position: fixed; bottom: 16px; left: 16px; z-index: 3;
+    color: #4af; font-size: 11px; letter-spacing: 1px;
+    display: none; text-shadow: 0 0 8px #4af;
+  }
+  #underwater-overlay {
+    position: fixed; inset: 0; z-index: 4;
+    background: rgba(0,20,40,0.35); pointer-events: none;
+    display: none;
+  }
+  #crosshair {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    z-index: 3; pointer-events: none; display: none;
+  }
+  #crosshair::before, #crosshair::after {
+    content: ''; position: absolute; background: rgba(255,255,255,0.5);
+  }
+  #crosshair::before { width: 2px; height: 12px; left: -1px; top: -6px; }
+  #crosshair::after { width: 12px; height: 2px; left: -6px; top: -1px; }
+  #loader {
+    position: fixed; inset: 0; z-index: 20;
+    display: flex; align-items: center; justify-content: center;
+    color: #7af; font-size: 14px; letter-spacing: 2px;
+    background: rgba(0,0,0,0.9);
+  }
 </style>
 </head>
 <body>
 <div id="loader">GENERATING WORLD...</div>
-<div id="hud">
-  <div id="hud-coords">POS: 0, 0, 0</div>
-  <div id="hud-gems">GEMS: 0 / 20</div>
-  <div id="hud-time">TIME: DAWN</div>
-  <div id="hud-speed">SPD: 1.0</div>
+<div id="overlay">
+  <h2>⚡ HYPERPOLY v13</h2>
+  <p>WASD — Move &nbsp;|&nbsp; Mouse — Look &nbsp;|&nbsp; ESC — Unlock</p>
+  <p style="font-size:11px;color:#5a7a9a;margin-top:8px;">
+    The Block (NE) · Vault Compound 7 (SW) · The Between
+  </p>
+  <button class="btn" onclick="startScene()">ENTER</button>
 </div>
+<div id="underwater-overlay"></div>
 <div id="crosshair"></div>
+<div id="hud">
+  <span id="hud-pos">POS: 0, 0</span> &nbsp;|&nbsp;
+  <span id="hud-elev">ELEV: 0.0</span> &nbsp;|&nbsp;
+  <span id="hud-biome">BIOME: —</span> &nbsp;|&nbsp;
+  FPS: <span id="hud-fps">0</span>
+</div>
+<canvas id="wgpu-canvas"></canvas>
 
 <script type="importmap">
-{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js"}}
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
 </script>
 
 <script type="module">
 import * as THREE from 'three';
+import { HyperPolyGeology } from './compute/hyperpoly_geology.js';
+import { Phase5Extractor } from './compute/phase5_extractor/phase5_host.js';
+import { Phase5Draw } from './compute/phase5_extractor/phase5_draw.js';
+import { TerrainRenderer } from './render/terrain_renderer.js';
 
-// ── NOISE (value noise + fractal) ──
-const noisePerm = new Uint8Array(512);
-(()=>{const p=[];for(let i=0;i<256;i++)p[i]=i;for(let i=255;i>0;i--){const j=Math.floor(Math.random()*(i+1));[p[i],p[j]]=[p[j],p[i]]}for(let i=0;i<512;i++)noisePerm[i]=p[i&255]})();
-function fade(t){return t*t*t*(t*(t*6-15)+10)}
-function lerp(a,b,t){return a+t*(b-a)}
-function grad(hash,x,y,z){const h=hash&15;const u=h<8?x:y;const v=h<4?y:h===12||h===14?x:z;return ((h&1)?-u:u)+((h&2)?-v:v)}
-function noise3D(x,y,z){const X=Math.floor(x)&255,Y=Math.floor(y)&255,Z=Math.floor(z)&255;x-=Math.floor(x);y-=Math.floor(y);z-=Math.floor(z);const u=fade(x),v=fade(y),w=fade(z);const A=noisePerm[X]+Y,AA=noisePerm[A]+Z,AB=noisePerm[A+1]+Z,B=noisePerm[X+1]+Y,BA=noisePerm[B]+Z,BB=noisePerm[B+1]+Z;return lerp(lerp(lerp(grad(noisePerm[AA],x,y,z),grad(noisePerm[BA],x-1,y,z),u),lerp(grad(noisePerm[AB],x,y-1,z),grad(noisePerm[BB],x-1,y-1,z),u),v),lerp(lerp(grad(noisePerm[AA+1],x,y,z-1),grad(noisePerm[BA+1],x-1,y,z-1),u),lerp(grad(noisePerm[AB+1],x,y-1,z-1),grad(noisePerm[BB+1],x-1,y-1,z-1),u),v),w)}
-function fbm(x,y,z,oct=4){let v=0,a=1,f=1;for(let i=0;i<oct;i++){v+=noise3D(x*f,y*f,z*f)*a;a*=.5;f*=2}return v}
-
-// ── WORLD CONSTANTS ──
-const WORLD_SIZE = 200;
-const TILE_COUNT = 80;
-const TILE_SPACING = WORLD_SIZE / TILE_COUNT;
-const TERRAIN_SCALE = 0.018;
-const TREE_COUNT = 600;
-const ROCK_COUNT = 400;
-const GEM_COUNT = 20;
+// ═══════════════════════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════════════════════
+const WORLD = 256; // matches 256³ voxel grid
 const WATER_LEVEL = -0.6;
+const FOG_DENSITY = 0.018;
+const NUM_RAIN = 700;
+const DRAW_DIST = 120;
 
-// ── SCENE SETUP ──
+// ═══════════════════════════════════════════════════════════════
+// BIOME HELPERS — The Block (NE) & Vault Compound 7 (SW)
+// ═══════════════════════════════════════════════════════════════
+const BIOME_BLOCK = 0;
+const BIOME_VAULT = 1;
+const BIOME_WILD = 2;
+
+function getBiome(x, z) {
+  const wx = ((x % WORLD) + WORLD) % WORLD;
+  const wz = ((z % WORLD) + WORLD) % WORLD;
+  if (wx >= 112 && wx < 192 && wz >= 48 && wz < 128) return BIOME_BLOCK;
+  if (wx >= 64 && wx < 144 && wz >= 128 && wz < 208) return BIOME_VAULT;
+  return BIOME_WILD;
+}
+
+// ── Biome-aware terrain material generator ──
+// Returns [density, cohesion, ice, organic, water, temperature]
+// The 6-channel tensor used by the hyperpoly compute pipeline.
+function getBiomeMaterial(bx, by, bz, worldX, worldZ) {
+  const biome = getBiome(worldX, worldZ);
+  const n = (bx, bz) => 0.5 + 0.5 * Math.sin(bx * 3 + bz * 2 + by * 1.5);
+
+  switch (biome) {
+    case BIOME_BLOCK: {
+      // Concrete plateau — flat, hard, dense
+      // Surface height ~2.5, drops to bedrock at by=2
+      const surfaceY = 28; // 2.5 * 16 = 40 in brick coords → 2.5 world height
+      const distFromSurface = Math.abs(by - surfaceY);
+      const isSurface = distFromSurface < 2;
+      const density = isSurface ? 0.85 + n(bx, bz) * 0.15 : 0.9 + n(bx, bz) * 0.1;
+      const cohesion = isSurface ? 0.5 + n(bx, bz) * 0.2 : 0.7 + n(bx, bz) * 0.2;
+      const ice = 0.05 + n(bx, bz) * 0.05;
+      const organic = 0.02;
+      const water = 0.1;
+      // Warm from neon electronics
+      const temperature = 0.6 + n(bx, bz) * 0.2;
+      return [density, cohesion, ice, organic, water, temperature];
+    }
+    case BIOME_VAULT: {
+      // Industrial compound — metal structures, amber glow
+      // Flatter than Block, with pillar-like high points
+      const surfaceY = 27;
+      const distFromSurface = Math.abs(by - surfaceY);
+      const isSurface = distFromSurface < 2;
+      const pillar = (bx % 8 < 1 || bz % 8 < 1) && distFromSurface < 4 ? 0.3 : 0;
+      const density = isSurface ? 0.9 + pillar : 0.85 + pillar * 0.5;
+      // High cohesion — metal is strong
+      const cohesion = 0.7 + 0.2 * Math.sin(bx * 1.5 + bz * 2.3);
+      const ice = 0.02;
+      const organic = 0.01;
+      const water = 0.05;
+      // Warm amber — machinery running
+      const temperature = 0.5 + 0.3 * (0.5 + 0.5 * Math.sin(bx * 0.7 + bz * 0.9));
+      return [density, cohesion, ice, organic, water, temperature];
+    }
+    default: {
+      // The Between — wild terrain with noise-driven shapes
+      const h = 0.5 + 0.5 * Math.sin(bx * 3 + by * 2 + bz * 4);
+      const c = 0.3 + 0.3 * Math.cos(bx * 2 + by * 5 + bz * 3);
+      return [
+        h, c,
+        0.5 - c * 0.3, 0.5 - c * 0.3, 0.5 - c * 0.3,
+        0.0,
+      ];
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// THREE.JS — Sky, Water, Rain, HUD (overlay canvas)
+// ═══════════════════════════════════════════════════════════════
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87CEEB);
-scene.fog = new THREE.Fog(0x87CEEB, 60, 180);
+const fogColor = new THREE.Color(0x000d1a);
+scene.fog = new THREE.FogExp2(fogColor, FOG_DENSITY);
+scene.background = fogColor;
 
-const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.5, 300);
-camera.position.set(0, 12, 18);
+const cam = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, DRAW_DIST);
 
-const renderer = new THREE.WebGLRenderer({antialias:true});
+const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.2;
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+renderer.domElement.style.position = 'fixed';
+renderer.domElement.style.top = '0';
+renderer.domElement.style.left = '0';
+renderer.domElement.style.zIndex = '2';
+renderer.domElement.style.pointerEvents = 'none';
 document.body.appendChild(renderer.domElement);
 
-// ── LIGHTING ──
-const ambient = new THREE.AmbientLight(0x6688cc, 0.7);
-scene.add(ambient);
-const sun = new THREE.DirectionalLight(0xffeedd, 2.8);
-sun.position.set(80, 60, 40);
-sun.castShadow = true;
-sun.shadow.mapSize.set(2048,2048);
-sun.shadow.camera.near = 0.5;
-sun.shadow.camera.far = 200;
-sun.shadow.camera.left = -80; sun.shadow.camera.right = 80;
-sun.shadow.camera.top = 80; sun.shadow.camera.bottom = -80;
-sun.shadow.bias = -0.0003;
-scene.add(sun);
-
-const hemi = new THREE.HemisphereLight(0x88ccff, 0x446622, 0.5);
-scene.add(hemi);
-
-// ── TERRAIN ──
-const terrainGeo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, TILE_COUNT, TILE_COUNT);
-terrainGeo.rotateX(-Math.PI/2);
-const positions = terrainGeo.attributes.position;
-const colors = new Float32Array(positions.count * 3);
-
-function getHeight(x,z){
-  const h = fbm(x*TERRAIN_SCALE, 0, z*TERRAIN_SCALE, 5);
-  const ridge = Math.abs(h) * 2.2;
-  const basin = fbm(x*0.007, 50, z*0.007, 3) * 3;
-  return ridge * 5.5 + basin - 0.8;
-}
-
-function biomeColor(h){
-  if(h < WATER_LEVEL + 0.05) return [0.15, 0.45, 0.55]; // sand shore
-  if(h < 0.3) return [0.18 + Math.random()*0.08, 0.55 + Math.random()*0.12, 0.18 + Math.random()*0.06]; // grass
-  if(h < 2.0) return [0.22 + Math.random()*0.10, 0.48 + Math.random()*0.10, 0.12 + Math.random()*0.08]; // meadow
-  if(h < 5.0) return [0.35, 0.32, 0.25]; // rock
-  return [0.85, 0.82, 0.78]; // snow peak
-}
-
-for(let i=0;i<positions.count;i++){
-  const x = positions.getX(i), z = positions.getZ(i);
-  const h = getHeight(x,z);
-  positions.setY(i, h);
-  const [r,g,b] = biomeColor(h);
-  colors[i*3]=r; colors[i*3+1]=g; colors[i*3+2]=b;
-}
-terrainGeo.setAttribute('color', new THREE.BufferAttribute(colors,3));
-terrainGeo.computeVertexNormals();
-
-const terrainMat = new THREE.MeshStandardMaterial({vertexColors:true, flatShading:true, roughness:0.85, metalness:0.05});
-const terrain = new THREE.Mesh(terrainGeo, terrainMat);
-terrain.receiveShadow = true;
-scene.add(terrain);
-
-// ── WATER ──
-const waterGeo = new THREE.PlaneGeometry(WORLD_SIZE*1.1, WORLD_SIZE*1.1);
-const waterMat = new THREE.MeshStandardMaterial({color:0x3388cc, roughness:0.15, metalness:0.4, transparent:true, opacity:0.75, flatShading:true});
+// ── Water plane ──
+const waterGeo = new THREE.PlaneGeometry(WORLD * 1.5, WORLD * 1.5, 80, 80);
+waterGeo.rotateX(-Math.PI / 2);
+const waterMat = new THREE.MeshLambertMaterial({ color: 0x001a2e, transparent: true, opacity: 0.72, depthWrite: false });
 const water = new THREE.Mesh(waterGeo, waterMat);
-water.rotation.x = -Math.PI/2;
-water.position.y = WATER_LEVEL;
-water.renderOrder = 1;
-water.material.depthWrite = false;
+water.position.set(WORLD / 2, WATER_LEVEL, WORLD / 2);
 scene.add(water);
 
-// ── LOW-POLY ASSET GENERATORS ──
-function createTree(x,y,z,s=1){
-  const group = new THREE.Group();
-  const trunkH = 1.5*s + Math.random()*s*1.2;
-  const trunkGeo = new THREE.CylinderGeometry(0.12*s, 0.18*s, trunkH, 5);
-  const trunkMat = new THREE.MeshStandardMaterial({color:new THREE.Color().setHSL(0.1,0.4,0.15+Math.random()*0.15),flatShading:true,roughness:0.9});
-  const trunk = new THREE.Mesh(trunkGeo, trunkMat);
-  trunk.position.y = trunkH/2;
-  trunk.castShadow = true; trunk.receiveShadow = true;
-  group.add(trunk);
-
-  const tiers = 2 + Math.floor(Math.random()*2);
-  for(let i=0;i<tiers;i++){
-    const r = (1.2 - i*0.35)*s;
-    const h = 0.9*s*Math.random()*0.3 + 0.7*s;
-    const coneGeo = new THREE.ConeGeometry(r, h, 6);
-    const hue = 0.15 + Math.random()*0.22;
-    const coneMat = new THREE.MeshStandardMaterial({color:new THREE.Color().setHSL(hue,0.7,0.25+Math.random()*0.2),flatShading:true,roughness:0.7});
-    const cone = new THREE.Mesh(coneGeo, coneMat);
-    cone.position.y = trunkH + i*0.65*s;
-    cone.castShadow = true; cone.receiveShadow = true;
-    group.add(cone);
+function animateWater(t) {
+  const pos = waterGeo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i) + WORLD / 2;
+    const z = pos.getZ(i) + WORLD / 2;
+    pos.setY(i, Math.sin(t * 1.5 + x * 0.3 + z * 0.3) * 0.06);
   }
-  group.position.set(x,y,z);
-  const ry = Math.random()*Math.PI*2;
-  group.rotation.y = ry;
-  group.scale.setScalar(0.7+Math.random()*0.6);
-  return group;
+  pos.needsUpdate = true;
 }
 
-function createRock(x,y,z,s=1){
-  const geo = new THREE.IcosahedronGeometry(s*0.6,0);
-  const mat = new THREE.MeshStandardMaterial({color:new THREE.Color().setHSL(0.08,0.05,0.35+Math.random()*0.35),flatShading:true,roughness:0.8,metalness:0.1});
-  const rock = new THREE.Mesh(geo, mat);
-  rock.position.set(x,y,z);
-  rock.rotation.set(Math.random()*Math.PI,Math.random()*Math.PI,Math.random()*Math.PI);
-  rock.scale.set(0.7+Math.random()*1.2, 0.4+Math.random()*0.8, 0.7+Math.random()*1.2);
-  rock.castShadow = true; rock.receiveShadow = true;
-  return rock;
+// ── Rain ──
+const rainGeo = new THREE.BufferGeometry();
+const rainPos = new Float32Array(NUM_RAIN * 3);
+for (let i = 0; i < NUM_RAIN; i++) {
+  rainPos[i*3] = (Math.random() - 0.5) * 50;
+  rainPos[i*3+1] = Math.random() * 25;
+  rainPos[i*3+2] = (Math.random() - 0.5) * 50;
+}
+rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
+const rainMat = new THREE.PointsMaterial({ color: 0x5566aa, size: 0.08, transparent: true, opacity: 0.35 });
+const rain = new THREE.Points(rainGeo, rainMat);
+scene.add(rain);
+
+function animateRain(cp) {
+  const rp = rainGeo.attributes.position;
+  for (let i = 0; i < NUM_RAIN; i++) {
+    rp.array[i*3+1] -= 0.4;
+    if (rp.array[i*3+1] < cp.y - 8) {
+      rp.array[i*3]   = cp.x + (Math.random() - 0.5) * 50;
+      rp.array[i*3+1] = cp.y + 18;
+      rp.array[i*3+2] = cp.z + (Math.random() - 0.5) * 50;
+    }
+  }
+  rp.needsUpdate = true;
 }
 
-function createGem(x,y,z){
-  const group = new THREE.Group();
-  const geo = new THREE.OctahedronGeometry(0.35,0);
-  const mat = new THREE.MeshStandardMaterial({color:new THREE.Color().setHSL(0.55+Math.random()*0.3,1,0.55),flatShading:true,roughness:0.1,metalness:0.6,emissive:new THREE.Color().setHSL(0.55+Math.random()*0.3,0.8,0.3)});
-  const gem = new THREE.Mesh(geo, mat);
-  gem.castShadow = true;
-  group.add(gem);
-  // ring
-  const ringGeo = new THREE.TorusGeometry(0.42,0.06,5,8);
-  const ringMat = new THREE.MeshStandardMaterial({color:0xffffff,flatShading:true,roughness:0.2,metalness:0.8,emissive:0x444444});
-  const ring = new THREE.Mesh(ringGeo, ringMat);
-  ring.rotation.x = Math.PI/2;
-  group.add(ring);
-  group.position.set(x,y,z);
-  group.userData = {gem:true, collected:false, baseY:y, phase:Math.random()*Math.PI*2};
-  return group;
-}
+// ── Lighting ──
+const ambLight = new THREE.AmbientLight(0x112233, 1.2);
+scene.add(ambLight);
+const dirLight = new THREE.DirectionalLight(0x2244aa, 0.8);
+dirLight.position.set(50, 80, 50);
+scene.add(dirLight);
 
-// ── SCATTER OBJECTS ──
-const trees = [], rocks = [], gems = [];
-function scatterObjects(){
-  for(let i=0;i<TREE_COUNT;i++){
-    const x = (Math.random()-0.5)*WORLD_SIZE*0.92;
-    const z = (Math.random()-0.5)*WORLD_SIZE*0.92;
-    const h = getHeight(x,z);
-    if(h < WATER_LEVEL + 0.2 || h > 5.5) continue;
-    const tree = createTree(x,h,z);
-    scene.add(tree); trees.push(tree);
-  }
-  for(let i=0;i<ROCK_COUNT;i++){
-    const x = (Math.random()-0.5)*WORLD_SIZE*0.92;
-    const z = (Math.random()-0.5)*WORLD_SIZE*0.92;
-    const h = getHeight(x,z);
-    if(h < WATER_LEVEL - 0.1 || h > 6.0) continue;
-    const rock = createRock(x,h,z,0.3+Math.random()*1.5);
-    scene.add(rock); rocks.push(rock);
-  }
-  for(let i=0;i<GEM_COUNT;i++){
-    const x = (Math.random()-0.5)*WORLD_SIZE*0.85;
-    const z = (Math.random()-0.5)*WORLD_SIZE*0.85;
-    const h = getHeight(x,z);
-    if(h < WATER_LEVEL + 0.3 || h > 4.0) { i--; continue; }
-    const gem = createGem(x,h+0.6,z);
-    scene.add(gem); gems.push(gem);
+// ── Sky / Fog per biome ──
+function updateBiomeLighting(biome, t) {
+  switch (biome) {
+    case BIOME_BLOCK:
+      // Neon-dark — magenta tinted
+      scene.fog.color.setHex(0x1a0011);
+      scene.background.setHex(0x1a0011);
+      scene.fog.density = 0.025;
+      ambLight.color.setHex(0x442244);
+      ambLight.intensity = 0.6;
+      dirLight.color.setHex(0xff44aa);
+      dirLight.intensity = 0.5;
+      break;
+    case BIOME_VAULT:
+      // Amber industrial — warm fog
+      scene.fog.color.setHex(0x1a0e00);
+      scene.background.setHex(0x1a0e00);
+      scene.fog.density = 0.022;
+      ambLight.color.setHex(0x443322);
+      ambLight.intensity = 0.5;
+      dirLight.color.setHex(0xff8800);
+      dirLight.intensity = 0.4;
+      break;
+    default:
+      // The Between — deep blue
+      scene.fog.color.setHex(0x000d1a);
+      scene.background.setHex(0x000d1a);
+      scene.fog.density = FOG_DENSITY;
+      ambLight.color.setHex(0x112233);
+      ambLight.intensity = 1.2;
+      dirLight.color.setHex(0x2244aa);
+      dirLight.intensity = 0.8;
+      break;
   }
 }
-scatterObjects();
+let lightningTimer = 0;
+const normFog = new THREE.Color(0x000d1a);
+const litFog = new THREE.Color(0x8888bb);
 
-// ── SKY DOME ──
-const skyGeo = new THREE.SphereGeometry(130,32,16);
-const skyMat = new THREE.ShaderMaterial({
-  uniforms:{
-    uTime:{value:0},
-    uSunPos:{value:new THREE.Vector3(80,60,40)}
-  },
-  vertexShader:/*glsl*/`
-    varying vec3 vWorldPos;
-    void main(){
-      vec4 wp = modelMatrix * vec4(position,1.0);
-      vWorldPos = wp.xyz;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
-    }`,
-  fragmentShader:/*glsl*/`
-    varying vec3 vWorldPos;
-    uniform float uTime;
-    uniform vec3 uSunPos;
-    void main(){
-      vec3 dir = normalize(vWorldPos);
-      float sunAngle = dot(normalize(dir), normalize(uSunPos));
-      float y = dir.y;
-      // gradient: horizon orange → zenith deep blue
-      vec3 top = vec3(0.15, 0.25, 0.7);
-      vec3 horizon = vec3(0.95, 0.55, 0.3);
-      vec3 sky = mix(horizon, top, smoothstep(-0.1, 0.5, y));
-      // sun glow
-      float glow = smoothstep(0.92, 0.98, sunAngle) * 0.4;
-      sky += vec3(1.0, 0.85, 0.5) * glow;
-      // night tint
-      float nightFac = smoothstep(-0.1, -0.35, y);
-      sky = mix(sky, vec3(0.02, 0.03, 0.1), nightFac*0.7);
-      gl_FragColor = vec4(sky, 1.0);
-    }`,
-  side: THREE.BackSide, depthWrite: false
-});
-const sky = new THREE.Mesh(skyGeo, skyMat);
-scene.add(sky);
-
-// ── PLAYER ──
-const player = new THREE.Group();
-const bodyGeo = new THREE.CapsuleGeometry(0.35, 0.9, 4, 8);
-const bodyMat = new THREE.MeshStandardMaterial({color:0xff6644, flatShading:true, roughness:0.5});
-const body = new THREE.Mesh(bodyGeo, bodyMat);
-body.position.y = 0.8;
-body.castShadow = true;
-player.add(body);
-const headGeo = new THREE.IcosahedronGeometry(0.3,0);
-const headMat = new THREE.MeshStandardMaterial({color:0xffcc88, flatShading:true, roughness:0.4});
-const head = new THREE.Mesh(headGeo, headMat);
-head.position.y = 1.55;
-head.castShadow = true;
-player.add(head);
-// eyes
-const eyeGeo = new THREE.SphereGeometry(0.06,4,4);
-const eyeMat = new THREE.MeshStandardMaterial({color:0x000000, roughness:0.1});
-const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
-eyeL.position.set(-0.12, 1.62, 0.26);
-player.add(eyeL);
-const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
-eyeR.position.set(0.12, 1.62, 0.26);
-player.add(eyeR);
-
-player.position.set(0, getHeight(0,0)+0.01, 0);
-scene.add(player);
-
-// ── PLAYER STATE ──
-const state = {
-  pos: player.position.clone(),
-  vel: new THREE.Vector3(),
-  rotY: 0,
-  rotX: 0.2,
-  speed: 8,
-  sprintMul: 1,
-  onGround: true,
-  gemsCollected: 0
-};
-
-// ── INPUT ──
-const keys = {};
-window.addEventListener('keydown',e=>{keys[e.key.toLowerCase()]=true;e.preventDefault()});
-window.addEventListener('keyup',e=>{keys[e.key.toLowerCase()]=false;e.preventDefault()});
-
-let mouseLocked = false;
-renderer.domElement.addEventListener('click',()=>{renderer.domElement.requestPointerLock()});
-document.addEventListener('pointerlockchange',()=>{mouseLocked=document.pointerLockElement===renderer.domElement});
-
-let mx=0,my=0;
-document.addEventListener('mousemove',e=>{if(mouseLocked){mx+=e.movementX*0.002;my-=e.movementY*0.002;my=Math.max(-1.2,Math.min(0.7,my))}});
-
-// ── GAME LOOP ──
-const clock = new THREE.Clock();
-let timeOfDay = 0.25; // 0=midnight 0.25=dawn 0.5=noon 0.75=dusk
-
-function updateHUD(){
-  const p = player.position;
-  document.getElementById('hud-coords').textContent = `POS: ${p.x.toFixed(0)}, ${p.y.toFixed(1)}, ${p.z.toFixed(0)}`;
-  document.getElementById('hud-gems').textContent = `GEMS: ${state.gemsCollected} / ${GEM_COUNT}`;
-  const names = ['NIGHT','DAWN','NOON','DUSK'];
-  const idx = Math.floor(timeOfDay*4)%4;
-  document.getElementById('hud-time').textContent = `TIME: ${names[idx]}`;
-  document.getElementById('hud-speed').textContent = `SPD: ${state.sprintMul.toFixed(1)}`;
-}
-
-function animate(){
-  requestAnimationFrame(animate);
-  const dt = Math.min(clock.getDelta(), 0.15);
-
-  // ── TIME OF DAY ──
-  timeOfDay += dt * 0.03;
-  if(timeOfDay>1) timeOfDay-=1;
-  const sunAngle = timeOfDay * Math.PI * 2;
-  const sunX = Math.cos(sunAngle)*80;
-  const sunY = Math.sin(sunAngle)*60;
-  sun.position.set(sunX, sunY, 40);
-  sky.material.uniforms.uSunPos.value.copy(sun.position);
-
-  // day/night params
-  const dayFac = Math.max(0, Math.sin(sunAngle));
-  const nightFac = 1 - dayFac;
-
-  scene.fog.color.copy(new THREE.Color().setRGB(0.1*nightFac+0.5*dayFac, 0.15*nightFac+0.7*dayFac, 0.3*nightFac+0.9*dayFac));
-  scene.background.copy(scene.fog.color);
-  ambient.intensity = 0.2 + dayFac*0.6;
-  sun.intensity = 0.3 + dayFac*2.8;
-  hemi.intensity = 0.1 + dayFac*0.5;
-  renderer.toneMappingExposure = 0.5 + dayFac*0.8;
-
-  // ── MOVEMENT ──
-  state.sprintMul = keys['shift'] ? 1.8 : 1.0;
-  const forward = new THREE.Vector3(-Math.sin(state.rotY), 0, -Math.cos(state.rotY));
-  const right = new THREE.Vector3(Math.cos(state.rotY), 0, -Math.sin(state.rotY));
-  const moveDir = new THREE.Vector3();
-
-  if(keys['w']||keys['arrowup']) moveDir.add(forward);
-  if(keys['s']||keys['arrowdown']) moveDir.sub(forward);
-  if(keys['a']||keys['arrowleft']) moveDir.sub(right);
-  if(keys['d']||keys['arrowright']) moveDir.add(right);
-
-  if(moveDir.length()>0) moveDir.normalize();
-
-  state.rotY += mx * 2.5;
-  state.rotX += my * 1.8;
-  state.rotX = Math.max(-1.2, Math.min(0.7, state.rotX));
-  mx*=0.85; my*=0.85;
-
-  const targetVel = moveDir.clone().multiplyScalar(state.speed * state.sprintMul);
-  state.vel.lerp(targetVel, 10*dt);
-
-  // gravity + ground clamp
-  const terrainH = getHeight(player.position.x, player.position.z);
-  state.vel.y -= 15*dt;
-  player.position.x += state.vel.x*dt;
-  player.position.z += state.vel.z*dt;
-  player.position.y += state.vel.y*dt;
-
-  if(player.position.y <= terrainH + 0.05){
-    player.position.y = terrainH + 0.05;
-    state.vel.y = 0;
-    state.onGround = true;
+function tickLightning() {
+  if (lightningTimer > 0) {
+    lightningTimer--;
+    scene.fog.color.copy(litFog);
+    scene.background = litFog;
+    scene.fog.density = 0.008;
+    ambLight.intensity = 3.5;
   } else {
-    state.onGround = false;
+    scene.fog.color.copy(normFog);
+    scene.background = normFog;
+    scene.fog.density = FOG_DENSITY;
+    ambLight.intensity = 1.2;
+    if (Math.random() < 0.003) lightningTimer = 3 + Math.floor(Math.random() * 8);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// BOOT WEBGPU
+// ═══════════════════════════════════════════════════════════════
+async function main() {
+  const wgpuCanvas = document.getElementById('wgpu-canvas');
+  wgpuCanvas.width = window.innerWidth;
+  wgpuCanvas.height = window.innerHeight;
+
+  const adapter = await navigator.gpu.requestAdapter();
+  if (!adapter) {
+    document.getElementById('loader').textContent = 'WebGPU not supported.';
+    return;
+  }
+  const device = await adapter.requestDevice();
+  const context = wgpuCanvas.getContext('webgpu');
+  const format = navigator.gpu.getPreferredCanvasFormat();
+  context.configure({ device, format, alphaMode: 'opaque' });
+
+  const depthTexture = device.createTexture({
+    size: [window.innerWidth, window.innerHeight],
+    format: 'depth24plus',
+    usage: GPUTextureUsage.RENDER_ATTACHMENT,
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // WORLD OVERLAY — The Block markers, Vault beacons, lore HUD
+  // ═══════════════════════════════════════════════════════════════
+  const overlayCanvas = document.createElement('canvas');
+  overlayCanvas.id = 'world-overlay';
+  overlayCanvas.style.cssText = 'display:block;position:fixed;top:0;left:0;z-index:5;pointer-events:none;';
+  document.body.appendChild(overlayCanvas);
+  const octx = overlayCanvas.getContext('2d');
+  function resizeOverlay() {
+    overlayCanvas.width = window.innerWidth;
+    overlayCanvas.height = window.innerHeight;
+  }
+  resizeOverlay();
+  window.addEventListener('resize', resizeOverlay);
+
+  // Block neon markers
+  const blockMarkers = [];
+  for (let i = 0; i < 60; i++) {
+    blockMarkers.push({ x: 112 + Math.random() * 80, z: 48 + Math.random() * 80, phase: Math.random() * Math.PI * 2 });
+  }
+  // Vault amber beacons
+  const vaultBeacons = [];
+  for (let i = 0; i < 40; i++) {
+    vaultBeacons.push({ x: 64 + Math.random() * 80, z: 128 + Math.random() * 80, phase: Math.random() * Math.PI * 2 });
+  }
+  // Armored Defender patrol
+  const defender = { x: 140, z: 80, angle: Math.PI * 0.75, plates: [7,13,19,23,29,31,37,41] };
+  function tickDefender() {
+    defender.angle += 0.002;
+    defender.x = 140 + Math.cos(defender.angle) * 24;
+    defender.z = 80 + Math.sin(defender.angle) * 24;
+  }
+  // Mecha Entity Alpha
+  const mechaAlpha = { x: 104, z: 168, display: 0, tick: 0 };
+  function tickMecha() {
+    mechaAlpha.tick++;
+    if (mechaAlpha.tick % 30 === 0) mechaAlpha.display = (mechaAlpha.display + 1) % 10000;
+  }
+  let currentBiome = -1;
+  let biomeEntryT = 0;
+  function drawWorldOverlay(cp, t) {
+    const ctx = octx;
+    ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+    const biome = getBiome(cp.x, cp.z);
+    const biomeNames = ['THE BLOCK', 'VAULT COMPOUND 7', 'THE BETWEEN'];
+    const biomeColors = ['#ff44aa', '#ff8800', '#4488ff'];
+    if (biome !== currentBiome) { currentBiome = biome; biomeEntryT = t; }
+    const elapsed = t - biomeEntryT;
+    if (elapsed < 3) {
+      ctx.save();
+      ctx.globalAlpha = elapsed < 0.5 ? elapsed * 2 : (elapsed > 2 ? (3 - elapsed) : 1);
+      ctx.fillStyle = biomeColors[biome];
+      ctx.font = 'bold 28px monospace';
+      ctx.textAlign = 'center';
+      ctx.shadowColor = biomeColors[biome];
+      ctx.shadowBlur = 20;
+      ctx.fillText(biomeNames[biome], overlayCanvas.width / 2, overlayCanvas.height * 0.3);
+      ctx.restore();
+    }
+    if (biome === BIOME_BLOCK) {
+      for (const m of blockMarkers) {
+        const sx = (m.x - cp.x) * 2 + overlayCanvas.width / 2;
+        const sy = (m.z - cp.z) * 2 + overlayCanvas.height / 2 - 100;
+        if (sx < -50 || sx > overlayCanvas.width + 50 || sy < -50 || sy > overlayCanvas.height + 50) continue;
+        ctx.fillStyle = `rgba(255,68,170,${(0.5 + 0.5 * Math.sin(t * 2 + m.phase)) * 0.4})`;
+        ctx.fillRect(sx - 1.5, sy - 1.5, 3, 3);
+      }
+      // Defender indicator
+      const dx = defender.x - cp.x, dz = defender.z - cp.z;
+      const dDist = Math.sqrt(dx * dx + dz * dz);
+      if (dDist < 40) {
+        const a = Math.atan2(dz, dx);
+        const ex = overlayCanvas.width / 2 + Math.cos(a) * 60;
+        const ey = overlayCanvas.height / 2 + Math.sin(a) * 60;
+        ctx.save();
+        ctx.strokeStyle = '#ff44aa';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(overlayCanvas.width / 2, overlayCanvas.height / 2); ctx.lineTo(ex, ey); ctx.stroke();
+        ctx.fillStyle = '#ff44aa';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`DEFENDER [${dDist.toFixed(0)}m]`, ex, ey - 12);
+        ctx.restore();
+      }
+      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      ctx.font = '10px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText('Four corners meet one balance. Every plate carries a filtered number.', 8, overlayCanvas.height - 20);
+    } else if (biome === BIOME_VAULT) {
+      for (const b of vaultBeacons) {
+        const sx = (b.x - cp.x) * 2 + overlayCanvas.width / 2;
+        const sy = (b.z - cp.z) * 2 + overlayCanvas.height / 2 - 100;
+        if (sx < -50 || sx > overlayCanvas.width + 50 || sy < -50 || sy > overlayCanvas.height + 50) continue;
+        const pulse = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(t * 1.43 + b.phase));
+        ctx.beginPath();
+        ctx.arc(sx, sy, 2 + pulse * 3, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,136,0,${pulse * 0.5})`;
+        ctx.fill();
+      }
+      const mx = mechaAlpha.x - cp.x, mz = mechaAlpha.z - cp.z;
+      const mDist = Math.sqrt(mx * mx + mz * mz);
+      if (mDist < 40) {
+        const a = Math.atan2(mz, mx);
+        const ex = overlayCanvas.width / 2 + Math.cos(a) * 60;
+        const ey = overlayCanvas.height / 2 + Math.sin(a) * 60;
+        ctx.save();
+        ctx.strokeStyle = '#ff8800';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 3]);
+        ctx.beginPath(); ctx.moveTo(overlayCanvas.width / 2, overlayCanvas.height / 2); ctx.lineTo(ex, ey); ctx.stroke();
+        ctx.fillStyle = '#ff8800';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`α ${mechaAlpha.display} [${mDist.toFixed(0)}m]`, ex, ey - 12);
+        ctx.restore();
+      }
+      const pc = (t * 1.43) % 1 < 0.5 ? '\u25C9' : '\u25CB';
+      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      ctx.font = '10px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText(`${pc} Mecha Entity Alpha — computing since 2017`, 8, overlayCanvas.height - 20);
+    } else {
+      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      ctx.font = '10px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText('The between IS the product. The mistake IS the signal.', 8, overlayCanvas.height - 20);
+    }
   }
 
-  // jump
-  if(state.onGround && keys[' ']){
-    state.vel.y = 7;
-    state.onGround = false;
+  // ═══════════════════════════════════════════════════════════════
+  // SHELL MODEL GENERATOR — produces Float32Array[6] per brick
+  // Uses biome-aware material tensors for The Block, Vault Compound 7, and The Between
+  // ═══════════════════════════════════════════════════════════════
+  function shellModelGenerator(bx, by, bz) {
+    // Convert brick coords to world coords (brick size = 16)
+    const worldX = bx * 16;
+    const worldZ = bz * 16;
+    const mat = getBiomeMaterial(bx, by, bz, worldX, worldZ);
+    return new Float32Array(mat);
   }
 
-  // world bounds
-  const half = WORLD_SIZE/2 - 2;
-  player.position.x = Math.max(-half, Math.min(half, player.position.x));
-  player.position.z = Math.max(-half, Math.min(half, player.position.z));
-  if(player.position.y < -15) player.position.y = terrainH + 2;
+  // ═══════════════════════════════════════════════════════════════
+  // INIT COMPUTE + RENDER PIPELINE
+  // ═══════════════════════════════════════════════════════════════
+  const base = 'compute';
+  const [hermiteWGSL, qefWGSL, lodWGSL, deltaWGSL, topoWGSL, stitchWGSL, editWGSL, renderWGSL] = 
+    await Promise.all([
+      fetch(`${base}/phase5_extractor/phase5_hermite.wgsl`).then(r => r.text()),
+      fetch(`${base}/phase5_extractor/phase5_qef.wgsl`).then(r => r.text()),
+      fetch(`${base}/phase5_extractor/phase5_lod.wgsl`).then(r => r.text()),
+      fetch(`${base}/phase5_extractor/phase5_delta.wgsl`).then(r => r.text()),
+      fetch(`${base}/phase5_extractor/phase5_topology.wgsl`).then(r => r.text()),
+      fetch(`${base}/phase5_extractor/phase5_stitch.wgsl`).then(r => r.text()),
+      fetch(`${base}/phase6_edit/phase6_edit.wgsl`).then(r => r.text()),
+      fetch('render/render_terrain.wgsl').then(r => r.text()),
+    ]);
 
-  player.rotation.y = state.rotY;
+  // Terrain Renderer
+  const terrainRenderer = new TerrainRenderer(device, context, depthTexture);
+  await terrainRenderer.init(renderWGSL);
 
-  // ── THIRD-PERSON CAMERA ──
-  const camDist = 10;
-  const camHeight = 5;
-  const camTarget = player.position.clone();
-  camTarget.y += 1.2;
-  const camOffset = new THREE.Vector3(
-    Math.sin(state.rotY)*camDist,
-    camHeight + state.rotX*6,
-    Math.cos(state.rotY)*camDist
-  );
-  const desiredCamPos = camTarget.clone().add(camOffset);
-  // terrain clamp for camera
-  const camTerrainH = getHeight(desiredCamPos.x, desiredCamPos.z);
-  if(desiredCamPos.y < camTerrainH + 1.5) desiredCamPos.y = camTerrainH + 1.5;
+  // Compute engine
+  const engine = new HyperPolyGeology(device, 256);
+  const extractor = new Phase5Extractor(device, 256);
+  const draw = new Phase5Draw(device);
 
-  camera.position.lerp(desiredCamPos, 6*dt);
-  camera.lookAt(camTarget);
+  const wgslSources = { hermite: hermiteWGSL, qef: qefWGSL, lod: lodWGSL,
+    delta: deltaWGSL, topology: topoWGSL, stitch: stitchWGSL, edit: editWGSL };
 
-  // ── GEM COLLECTION ──
-  for(const gem of gems){
-    if(gem.userData.collected) continue;
-    const dist = player.position.distanceTo(gem.position);
-    if(dist < 1.2){
-      gem.userData.collected = true;
-      gem.visible = false;
-      state.gemsCollected++;
-      // burst particles
-      for(let j=0;j<8;j++){
-        const pGeo = new THREE.SphereGeometry(0.06,3,3);
-        const pMat = new THREE.MeshStandardMaterial({color:gem.children[0].material.color,flatShading:true,emissive:gem.children[0].material.color});
-        const particle = new THREE.Mesh(pGeo,pMat);
-        particle.position.copy(gem.position);
-        const vel = new THREE.Vector3((Math.random()-0.5)*3,Math.random()*4,(Math.random()-0.5)*3);
-        scene.add(particle);
-        let life=0;
-        function animParticle(){
-          life+=0.016;
-          particle.position.add(vel.clone().multiplyScalar(0.016));
-          vel.y-=12*0.016;
-          particle.scale.setScalar(1-life*1.5);
-          if(life<0.7) requestAnimationFrame(animParticle);
-          else scene.remove(particle);
-        }
-        animParticle();
+  // Upload terrain
+  await engine.uploadQuantizedTerrain(shellModelGenerator);
+
+  // Init pipelines
+  await extractor.init(wgslSources);
+  await draw.init(wgslSources);
+
+  // Initial extraction
+  await extractor.fullExtract(engine.metaBuffer, engine.channelBuffers, engine.brickFlagsBuffer);
+  await draw.buildMesh(extractor.getVertexBuffer(), extractor.hermiteBuffer, extractor.getLODBuffer(), 0.5);
+
+  // ═══════════════════════════════════════════════════════════════
+  // HEIGHT QUERY — Sample the dual-contour mesh at (x, z)
+  // Uses the extracted vertex buffer. For now, fallback to the
+  // shell model generator's density field for player height.
+  // In production: raycast or barycentric lookup.
+  // ═══════════════════════════════════════════════════════════════
+  function getHeight(x, z) {
+    const bx = Math.floor(x / 16); const by = 8; const bz = Math.floor(z / 16);
+    if (bx < 0 || bx >= 16 || bz < 0 || bz >= 16) return 0;
+    const biome = getBiome(x, z);
+    switch (biome) {
+      case BIOME_BLOCK:
+        // Flat concrete plateau ~2.5 units high
+        return 2.3 + Math.sin(x * 0.05) * 0.15 + Math.cos(z * 0.05) * 0.15;
+      case BIOME_VAULT:
+        // Metal platform with structural pillars
+        return 2.0 + Math.sin(x * 0.15) * 0.2 + Math.cos(z * 0.15) * 0.2
+             + (Math.floor(x / 8) % 2 === 0 && Math.floor(z / 8) % 2 === 0 ? 0.8 : 0);
+      default:
+        // The Between — rolling terrain
+        return Math.sin((x + 50) * 0.1) * Math.cos((z + 50) * 0.1) * 2.5
+             + Math.sin((x + 50) * 0.4) * 0.3;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // FIRST-PERSON CAMERA (ported from Chaotic Terrain demo)
+  // ═══════════════════════════════════════════════════════════════
+  const keys = {};
+  let yaw = 0, pitch = 0;
+  let isLocked = false;
+  let vel = new THREE.Vector3();
+  const fwd = new THREE.Vector3();
+  const side = new THREE.Vector3();
+  const ACCEL = 0.08, FRICTION = 0.88;
+
+  document.addEventListener('keydown', e => { keys[e.code] = true; });
+  document.addEventListener('keyup', e => { keys[e.code] = false; });
+  document.addEventListener('mousemove', e => {
+    if (!isLocked) return;
+    yaw -= e.movementX * 0.002;
+    pitch -= e.movementY * 0.002;
+    pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, pitch));
+  });
+  document.addEventListener('pointerlockchange', () => {
+    isLocked = document.pointerLockElement === wgpuCanvas;
+    document.getElementById('hud').style.display = isLocked ? 'block' : 'none';
+    document.getElementById('crosshair').style.display = isLocked ? 'block' : 'none';
+  });
+
+  window.startScene = () => {
+    document.getElementById('overlay').style.display = 'none';
+    wgpuCanvas.requestPointerLock();
+  };
+
+  wgpuCanvas.addEventListener('click', () => {
+    if (document.getElementById('overlay').style.display === 'none')
+      wgpuCanvas.requestPointerLock();
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // VIEW-PROJECTION MATRIX (matches camera.position/rotation)
+  // ═══════════════════════════════════════════════════════════════
+  function getViewProj(pos, yawAngle, pitchAngle) {
+    const aspect = window.innerWidth / window.innerHeight;
+    const fov = 65 * Math.PI / 180;
+    const near = 0.1, far = DRAW_DIST;
+    const t = Math.tan(fov / 2);
+    
+    const proj = new Float32Array(16);
+    proj[0] = 1 / (aspect * t); proj[1] = 0; proj[2] = 0; proj[3] = 0;
+    proj[4] = 0; proj[5] = 1 / t; proj[6] = 0; proj[7] = 0;
+    proj[8] = 0; proj[9] = 0; proj[10] = -(far + near) / (far - near); proj[11] = -1;
+    proj[12] = 0; proj[13] = 0; proj[14] = -2 * far * near / (far - near); proj[15] = 0;
+
+    // Camera → world matrix from yaw/pitch
+    const cosY = Math.cos(yawAngle), sinY = Math.sin(yawAngle);
+    const cosP = Math.cos(pitchAngle), sinP = Math.sin(pitchAngle);
+    
+    // Forward: (sinY * cosP, sinP, cosY * cosP)
+    // Right:   (cosY, 0, -sinY)
+    // Up:      (-sinY * sinP, cosP, -cosY * sinP)
+    const fx = sinY * cosP, fy = sinP, fz = cosY * cosP;
+    const rx = cosY, ry = 0, rz = -sinY;
+    const ux = -sinY * sinP, uy = cosP, uz = -cosY * sinP;
+
+    const view = new Float32Array(16);
+    view[0] = rx; view[1] = ux; view[2] = -fx; view[3] = 0;
+    view[4] = ry; view[5] = uy; view[6] = -fy; view[7] = 0;
+    view[8] = rz; view[9] = uz; view[10] = -fz; view[11] = 0;
+    view[12] = -(rx * pos.x + ry * pos.y + rz * pos.z);
+    view[13] = -(ux * pos.x + uy * pos.y + uz * pos.z);
+    view[14] =  (fx * pos.x + fy * pos.y + fz * pos.z);
+    view[15] = 1;
+
+    const vp = new Float32Array(16);
+    for (let row = 0; row < 4; row++) {
+      for (let col = 0; col < 4; col++) {
+        vp[col * 4 + row] =
+          proj[row] * view[col * 4] +
+          proj[row + 4] * view[col * 4 + 1] +
+          proj[row + 8] * view[col * 4 + 2] +
+          proj[row + 12] * view[col * 4 + 3];
       }
     }
-    // float animation
-    if(!gem.userData.collected){
-      gem.position.y = gem.userData.baseY + Math.sin(Date.now()*0.003 + gem.userData.phase)*0.15;
-      gem.rotation.y += dt*1.5;
-      gem.children[1].rotation.z += dt*2;
-    }
+    return vp;
   }
 
-  // ── SKY TIME ──
-  sky.material.uniforms.uTime.value += dt;
+  // ═══════════════════════════════════════════════════════════════
+  // FRAME LOOP
+  // ═══════════════════════════════════════════════════════════════
+  let frame = 0;
+  let fpsCount = 0, fpsTime = 0;
+  let displayFps = 0;
 
-  updateHUD();
+  // Position the camera at a known good starting point
+  cam.position.set(WORLD / 2, 4, WORLD / 2);
+
+  function animate(time) {
+    requestAnimationFrame(animate);
+    frame++;
+    const dt = Math.min((time - (frame === 1 ? time : lastFrameTime)) / 1000, 0.05);
+    const lastFrameTime = time;
+    const t = time * 0.001;
+
+    // ── Update THREE camera from WASD input ──
+    fwd.set(Math.sin(yaw), 0, Math.cos(yaw));
+    side.set(fwd.z, 0, -fwd.x);
+    if (keys['KeyW']) vel.addScaledVector(fwd, ACCEL);
+    if (keys['KeyS']) vel.addScaledVector(fwd, -ACCEL);
+    if (keys['KeyA']) vel.addScaledVector(side, -ACCEL);
+    if (keys['KeyD']) vel.addScaledVector(side, ACCEL);
+    vel.multiplyScalar(FRICTION);
+    cam.position.add(vel);
+
+    // World wrapping (seamless)
+    cam.position.x = ((cam.position.x % WORLD) + WORLD) % WORLD;
+    cam.position.z = ((cam.position.z % WORLD) + WORLD) % WORLD;
+
+    // Ground clamp
+    const groundH = getHeight(cam.position.x, cam.position.z);
+    const waveH = WATER_LEVEL + Math.sin(t * 1.5 + cam.position.x * 0.3) * 0.05;
+    const surfaceH = Math.max(groundH, waveH);
+    cam.position.y += (surfaceH + 1.7 - cam.position.y) * 0.1;
+
+    cam.rotation.order = 'YXZ';
+    cam.rotation.y = yaw;
+    cam.rotation.x = pitch;
+
+    // Underwater overlay
+    const underwaterEl = document.getElementById('underwater-overlay');
+    underwaterEl.style.display = cam.position.y < waveH + 0.2 ? 'block' : 'none';
+
+    // ── Update WebGPU terrain renderer ──
+    const vp = getViewProj(cam.position, yaw, pitch);
+    terrainRenderer.setViewProj(vp, [cam.position.x, cam.position.y, cam.position.z], t);
+
+    const encoder = device.createCommandEncoder();
+    terrainRenderer.render(encoder, extractor.getVertexBuffer(), draw);
+    device.queue.submit([encoder.finish()]);
+
+    // Compare with previous frame for lighting transitions
+    const cameraBiome = getBiome(cam.position.x, cam.position.z);
+    updateBiomeLighting(cameraBiome, t);
+
+    // ── Three.js overlay rendering ──
+    if (frame % 2 === 0) animateWater(t);
+    animateRain(cam.position);
+    tickLightning();
+    renderer.render(scene, cam);
+
+    // ── World overlay (The Block / Vault Compound 7 markers) ──
+    tickDefender();
+    tickMecha();
+    drawWorldOverlay(cam.position, t);
+
+    // ── HUD ──
+    fpsCount++;
+    fpsTime += dt;
+    if (fpsTime >= 0.5) {
+      displayFps = Math.round(fpsCount / fpsTime);
+      fpsCount = 0; fpsTime = 0;
+    }
+    const biomeNames = ['THE BLOCK', 'VAULT CMPD 7', 'THE BETWEEN'];
+    document.getElementById('hud-pos').textContent = `POS: ${cam.position.x.toFixed(0)}, ${cam.position.z.toFixed(0)}`;
+    document.getElementById('hud-elev').textContent = `ELEV: ${(cam.position.y - surfaceH).toFixed(1)}`;
+    document.getElementById('hud-biome').textContent = `BIOME: ${biomeNames[cameraBiome]}`;
+    document.getElementById('hud-fps').textContent = displayFps;
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // RESIZE
+  // ═══════════════════════════════════════════════════════════════
+  window.addEventListener('resize', () => {
+    const w = window.innerWidth, h = window.innerHeight;
+    wgpuCanvas.width = w; wgpuCanvas.height = h;
+    renderer.setSize(w, h);
+    cam.aspect = w / h;
+    cam.updateProjectionMatrix();
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // LAUNCH
+  // ═══════════════════════════════════════════════════════════════
+  document.getElementById('loader').style.display = 'none';
+  requestAnimationFrame(animate);
 }
 
-// ── RESIZE ──
-window.addEventListener('resize',()=>{
-  camera.aspect = window.innerWidth/window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+main().catch(err => {
+  console.error(err);
+  document.getElementById('loader').textContent = `Error: ${err.message}`;
 });
-
-// ── LAUNCH ──
-setTimeout(()=>{
-  document.getElementById('loader').classList.add('hide');
-  setTimeout(()=>document.getElementById('loader').remove(), 500);
-}, 600);
-
-animate();
 </script>
 </body>
 </html>

@@ -1,3 +1,10 @@
+// vinculum: compaction_density / queue_sparsity
+//   Ratio of active work items vs total queue capacity after culling.
+//   Drives dispatch sizing for downstream passes.
+// layer: compute
+// domain: terrain (maps to economy as transaction_volume / ledger_depth,
+//          evacuation as crowd_density / exit_throughput)
+//
 @group(0) @binding(0) var<storage, read> raw_queue: array<u32>;
 @group(0) @binding(1) var<storage, read> queue_count: atomic<u32>;
 @group(0) @binding(2) var<storage, read_write> compacted_queue: array<u32>;

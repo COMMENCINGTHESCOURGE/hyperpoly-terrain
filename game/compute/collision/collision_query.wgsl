@@ -1,3 +1,15 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Guinea Pig Trench LLC (PA #13674084)
+// Credit Facility: Truth Holds Enterprise (PA #7049023)
+//
+// vinculum: cell_occupancy / ray_path_length
+//   The ratio of voxel cells the ray tests that contain surface
+//   vs. the total length of the ray. Lower = more empty space skipped.
+//
+// layer: simulation
+// domain: terrain (maps to swarm as agent_vision / terrain_occupancy,
+//          legal as document_graph / search_space)
+//
 // ──────────────────────────────────────────────────────────────
 // COLLISION: Voxel DDA Raycast + Sphere-Cast
 // ──────────────────────────────────────────────────────────────
@@ -53,11 +65,6 @@ fn world_to_cell(pos: vec3<f32>) -> vec3<u32> {
 
 fn cell_idx(c: vec3<u32>) -> u32 {
   return c.x + c.y * CELLS + c.z * CELL_STRIDE;
-}
-
-fn sign_change(density: f32) -> bool {
-  return (density - ISO_THRESHOLD) * (density - ISO_THRESHOLD) < 1.0;
-  // Actually: check if any of 8 corners straddle the iso surface
 }
 
 // ── Ray-Cell Intersection ──
@@ -173,3 +180,7 @@ fn raycast_pass(@builtin(global_invocation_id) gid: vec3<u32>) {
 
   hit_output[ray_idx] = closest;
 }
+
+// Zero-trust invariant: verify no NaN propagation through collision chain
+ASSERT(!isnan(closest.pos.x) && !isnan(closest.pos.y) && !isnan(closest.pos.z));
+ASSERT(closest.t >= 0.0);

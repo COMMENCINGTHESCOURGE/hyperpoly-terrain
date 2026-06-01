@@ -1,3 +1,10 @@
+// vinculum: mass_exchange / volume_correction
+//   Ratio of water volume redistributed vs. total water volume per brick.
+//   Ensures closed-system conservation across erosion cycles.
+// layer: simulation
+// domain: terrain (maps to economy as capital_preservation / wealth_redistribution,
+//          evacuation as supply_allocation / population_carrying_capacity)
+//
 @group(0) @binding(0) var<storage, read> water_dst_u16: array<F16>;
 @group(0) @binding(1) var<storage, read_write> water_corrected_u16: array<F16>;
 @group(0) @binding(2) var<uniform> brick_meta: array<vec4<f32>>;

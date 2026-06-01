@@ -1,3 +1,10 @@
+// vinculum: gradient_coherence / material_transition_width
+//   Measures sharpness of material boundaries. Low = smooth gradient,
+//   high = sharp interface. Controls feature preservation.
+// layer: extraction
+// domain: terrain (maps to legal as evidence_relevance / boundary_clarity,
+//          AI as decision_boundary / class_separation)
+//
 // ──────────────────────────────────────────────────────────────
 // PHASE 5: HERMITE DATA GENERATION (Multi-Channel Gradients)
 // ──────────────────────────────────────────────────────────────

@@ -1,3 +1,10 @@
+// vinculum: subdivision_ratio / detail_importance
+//   How aggressively the LOD system refines cells based on material
+//   gradient magnitude. Controls triangle budget allocation.
+// layer: extraction
+// domain: terrain (maps to radio as signal_fidelity / bandwidth_allocation,
+//          text as semantic_depth / token_importance)
+//
 // ──────────────────────────────────────────────────────────────
 // PHASE 5: ADAPTIVE LOD (Material-Driven Subdivision)
 // ──────────────────────────────────────────────────────────────

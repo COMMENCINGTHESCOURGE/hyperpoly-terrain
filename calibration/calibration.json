@@ -1,0 +1,143 @@
+{
+  "version": "1.0",
+  "source": "ambientcg.com CC0",
+  "description": "Per-channel statistics from PBR texture sets mapped to material tensor channels",
+  "textures": {
+    "gravel": {
+      "ambientocclusion": {
+        "mean": 0.7415472269058228,
+        "std": 0.21355362236499786,
+        "min": 0.0,
+        "max": 1.0,
+        "range": 1.0
+      },
+      "color": {
+        "mean": 0.8344762921333313,
+        "std": 0.0758475735783577,
+        "min": 0.1921568661928177,
+        "max": 1.0,
+        "range": 0.8078431487083435
+      },
+      "displacement": {
+        "mean": 0.4334781765937805,
+        "std": 0.15108101069927216,
+        "min": 0.0,
+        "max": 1.0,
+        "range": 1.0
+      },
+      "normaldx": {
+        "mean": 0.627530038356781,
+        "std": 0.25057554244995117,
+        "min": 0.0,
+        "max": 1.0,
+        "range": 1.0
+      },
+      "normalgl": {
+        "mean": 0.6287406086921692,
+        "std": 0.24995532631874084,
+        "min": 0.0,
+        "max": 1.0,
+        "range": 1.0
+      },
+      "roughness": {
+        "mean": 0.46750515699386597,
+        "std": 0.050635118037462234,
+        "min": 0.25882354378700256,
+        "max": 0.7450980544090271,
+        "range": 0.48627451062202454
+      }
+    },
+    "ground": {
+      "ambientocclusion": {
+        "mean": 0.8916893601417542,
+        "std": 0.13262654840946198,
+        "min": 0.0470588244497776,
+        "max": 1.0,
+        "range": 0.9529411792755127
+      },
+      "color": {
+        "mean": 0.39841172099113464,
+        "std": 0.0916222408413887,
+        "min": 0.0,
+        "max": 1.0,
+        "range": 1.0
+      },
+      "displacement": {
+        "mean": 0.39317309856414795,
+        "std": 0.11531396210193634,
+        "min": 0.0313725508749485,
+        "max": 0.9372549057006836,
+        "range": 0.9058823585510254
+      },
+      "normaldx": {
+        "mean": 0.6213667988777161,
+        "std": 0.25530683994293213,
+        "min": 0.0,
+        "max": 1.0,
+        "range": 1.0
+      },
+      "normalgl": {
+        "mean": 0.6217284798622131,
+        "std": 0.2551300823688507,
+        "min": 0.0,
+        "max": 1.0,
+        "range": 1.0
+      },
+      "roughness": {
+        "mean": 0.5189620852470398,
+        "std": 0.04988688975572586,
+        "min": 0.3450980484485626,
+        "max": 0.7568627595901489,
+        "range": 0.4117647111415863
+      }
+    }
+  },
+  "mapping": {
+    "albedo": "surface_color (not yet implemented in tensor)",
+    "roughness": "perm_y / friction (inverse: high roughness = low permeability)",
+    "displacement": "density variation (high displacement = high density range)",
+    "normal": "surface gradient (used by hermite pass)"
+  },
+  "tensor_ranges": {
+    "gravel": {
+      "perm_y": {
+        "min": 0.0,
+        "max": 1.0,
+        "calibrated_center": 0.46750515699386597,
+        "note": "roughness\u2192permeability, inverse relationship"
+      },
+      "density": {
+        "min": 0.0,
+        "max": 1.0,
+        "calibrated_center": 0.4334781765937805,
+        "note": "displacement\u2192density variation"
+      },
+      "cohesion": {
+        "min": 0.0,
+        "max": 1.0,
+        "calibrated_center": 0.7415472269058228,
+        "note": "AO\u2192cohesion (cavities trap = cohesive zones)"
+      }
+    },
+    "ground": {
+      "perm_y": {
+        "min": 0.0,
+        "max": 1.0,
+        "calibrated_center": 0.5189620852470398,
+        "note": "roughness\u2192permeability, inverse relationship"
+      },
+      "density": {
+        "min": 0.0,
+        "max": 1.0,
+        "calibrated_center": 0.39317309856414795,
+        "note": "displacement\u2192density variation"
+      },
+      "cohesion": {
+        "min": 0.0,
+        "max": 1.0,
+        "calibrated_center": 0.8916893601417542,
+        "note": "AO\u2192cohesion (cavities trap = cohesive zones)"
+      }
+    }
+  }
+}

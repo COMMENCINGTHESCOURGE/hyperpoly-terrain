@@ -1,3 +1,10 @@
+// vinculum: collision_sphere_occupancy / player_clearance_ratio
+//   Ratio of sphere-sweep test volume vs. empty space along movement vector.
+//   Higher = tighter corridors, lower = open areas.
+// layer: simulation
+// domain: terrain (maps to swarm as agent_vision / obstacle_density,
+//          legal as habeas_corpus / physical_restraint_radius)
+//
 // ──────────────────────────────────────────────────────────────
 // COLLISION: Sphere-Cast (Player Body)
 // ──────────────────────────────────────────────────────────────
