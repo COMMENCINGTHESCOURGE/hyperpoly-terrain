@@ -23,7 +23,7 @@ export function parseOracleOutput(markdownResponse: string): ParsedOracleRespons
     const yamlString = yamlMatch[1];
     
     const extractArray = (key: string) => {
-        const regex = new RegExp(`${key}:\s*\\[(.*?)\\]`);
+        const regex = new RegExp(`${key}:\\s*\\[(.*?)\\]`);
         const match = yamlString.match(regex);
         if (!match) return [];
         return match[1].split(',').map(s => s.trim().replace(/['"]/g, '')).filter(s => s.length > 0);
