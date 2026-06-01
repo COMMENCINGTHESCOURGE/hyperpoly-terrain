@@ -34,6 +34,7 @@ canvas{display:block}
 
 <script type="module">
 import * as THREE from 'three';
+import { PangeaLoom } from './pangea_loom.js';
 
 // ── NOISE (value noise + fractal) ──
 const noisePerm = new Uint8Array(512);
@@ -261,6 +262,9 @@ const waterMat = new THREE.MeshStandardMaterial({
 const water = new THREE.Mesh(waterGeo, waterMat);
 scene.add(water);
 
+// Instantiate PangeaLoom dynamic biome/material orchestrator
+const loom = new PangeaLoom(scene, terrain, water, PLANET_RADIUS);
+
 // ── PLAYER (Spherical Controller) ──
 const player = new THREE.Group();
 const bodyGeo = new THREE.CapsuleGeometry(0.3, 0.7, 4, 8);
@@ -304,6 +308,7 @@ player.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), new THREE.Vector3
 function animate(){
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.1);
+  loom.update(dt);
 
   // W-dimension transit illusion
   starsGroup.rotation.y += dt * 0.01;
@@ -380,7 +385,10 @@ window.addEventListener('resize',()=>{
 // Load 12-channel Spherical Seed if available
 fetch('spherical_seed.json')
   .then(res => res.json())
-  .then(data => applySeededTerrain(data))
+  .then(data => {
+    applySeededTerrain(data);
+    loom.bindSeed(data);
+  })
   .catch(err => console.log("[Seed] Fallback enabled. Run scripts/run_spherical_prototype.py to generate seed: ", err));
 
 animate();
