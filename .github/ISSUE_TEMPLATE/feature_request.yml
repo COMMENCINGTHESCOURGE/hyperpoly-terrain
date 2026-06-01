@@ -1,0 +1,37 @@
+name: ✨ Feature Request
+description: Propose a new physical constraint, WGSL kernel, or architecture change.
+title: "[Feature]: <Short description>"
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before proposing a feature, please ensure it aligns with the MANIFOLD Manifesto:
+        - Does it maintain zero host-GPU sync?
+        - Does it treat the world as a continuous tensor field?
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Feature Proposal
+      description: What new capability do you want to add? (e.g., thermal weathering, wind erosion, flora density)
+    validations:
+      required: true
+
+  - type: textarea
+    id: physics
+    attributes:
+      label: Mathematical / Physical Basis
+      description: How does this map to the 6-channel material tensor? What physical laws constrain it?
+      placeholder: e.g., "Wind transports sediment along the normal gradient, bounded by cohesion."
+    validations:
+      required: true
+
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Proposed WGSL Implementation
+      description: How would this run on the GPU? (Rough sketch is fine)
+      render: wgsl
+    validations:
+      required: false
