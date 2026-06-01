@@ -25,6 +25,10 @@ public:
 
         // Load the specialized PBR material compiled by matc that handles the 6-channel thermodynamic parameterization
         // Note: For scaffolding, RESOURCES_TERRAIN_MATERIAL_FILAMENT_BIN is a placeholder macro
+        // Setup simulation state
+#ifdef TRACY_ENABLE
+        // tracy::ZoneScoped;
+#endif
         // terrainMaterial = filament::Material::Builder()
         //    .package(RESOURCES_TERRAIN_MATERIAL_FILAMENT_BIN, size)
         //    .build(*engine);
