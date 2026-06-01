@@ -1,146 +1,105 @@
-# Hyperpoly-Terrain II
-### A Continuity Engine — Not a Game Engine
+# hyperpoly-terrain
 
-> *"Field computation. Material-first. Conservation-enforced."*
+> Field computation. Not a game engine. A continuity engine.  
+> For world-builders who need living terrain, not static meshes.
 
-Hyperpoly-Terrain II is a GPU-native terrain simulation engine that generates meshes from **6-channel material tensors** using **cohesion-weighted QEF** and **conservation-enforcing volumetric simulation**. It is designed for physical accuracy, real-time erosion, and seamless integration into field-based computation pipelines.
+[![WebGPU](https://img.shields.io/badge/WebGPU-enabled-blue)](https://gpuweb.github.io/gpuweb/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Experimental](https://img.shields.io/badge/status-experimental-orange)](#status)
 
-[![WebGPU](https://img.shields.io/badge/WebGPU-Native-blue)](https://gpuweb.githubio)
-[![License](https://img.shields.io/badge/License-MIT-green)](./LICENSE)
-[![npm](https://img.shields.io/npm/v/hyperpoly-terrain)](https://www.npmjs.com/package/hyperpoly-terrain)
+**hyperpoly-terrain** is a GPU-native, material-first terrain simulation engine. It generates meshes from 6-channel material tensors using cohesion-weighted QEF and conservation-enforcing volumetric simulation — all in WebGPU, with zero host-GPU synchronization.
 
----
-
-## 🎯 Core Philosophy
-
-| Traditional Terrain Engine | Hyperpoly-Terrain II |
-|---------------------------|---------------------|
-| Heightmap-driven | **6-channel material tensor-driven** |
-| Discrete entity updates | **Field-based continuity computation** |
-| Host-GPU synchronization | **Zero host-GPU sync, pure GPU pipeline** |
-| Visual approximation | **Conservation-enforced volumetric simulation** |
-| Game-centric | **Domain-agnostic: geoscience, simulation, XR, research** |
+Part of the **MANIFOLD** field computation system: a continuity engine for worlds that evolve.
 
 ---
 
-## 🧱 Architecture Overview
+## 🌍 The MANIFOLD Manifesto
 
-```text
-┌─────────────────────────────────────┐
-│ 6-Channel Material Tensor Input     │
-│ [rock, soil, sand, water, ice, org] │
-└────────────┬────────────────────────┘
-             ▼
-┌─────────────────────────────────────┐
-│ Cohesion-Weighted QEF Solver        │
-│ • Feature-preserving mesh extraction│
-│ • Adaptive LOD, <2ms target         │
-│ • WGSL compute shaders              │
-└────────────┬────────────────────────┘
-             ▼
-┌─────────────────────────────────────┐
-│ Conservation-Enforcing Simulator    │
-│ • Real-time erosion & fluid dynamics│
-│ • Mass/volume conservation constraints│
-│ • Collision-aware volumetric update │
-└────────────┬────────────────────────┘
-             ▼
-┌─────────────────────────────────────┐
-│ Vinculum Operator Framework         │
-│ • Metadata-aware scheduling         │
-│ • Cross-pipeline dependency graph   │
-│ • Hot-swappable compute modules     │
-└────────────┬────────────────────────┘
-             ▼
-┌─────────────────────────────────────┐
-│ Output: Mesh + Material State + HUD │
-│ • WebGPU render-ready vertex buffer │
-│ • Tensor state snapshot for persistence│
-│ • Live pipeline telemetry (optional)│
-└─────────────────────────────────────┘
-```
+Traditional engines treat worlds as inventories of discrete objects—trees, rocks, water volumes—each synced between GPU and CPU. That atomic model breaks for continuous phenomena like erosion, where every grain influences its neighbor.
+
+Field computation instead simulates the terrain as a unified set of material tensors (elevation, moisture, sediment, six channels total) that evolve entirely on the GPU.
+
+**Example**: rain falls → water flows → terrain softens and hardens — all in a single WebGPU compute pass, zero host-GPU sync.
+
+This serves:
+- 🔬 **Researchers** prototyping erosion, sediment transport, or landscape evolution models
+- 🎮 **Indie developers** building worlds that breathe, where a raindrop today reshapes a valley tomorrow
+- 🎨 **Computational artists** exploring emergent form through physical constraints
 
 ---
 
-## 🚀 Quick Start
+## 🖼️ Visual Onboarding
+
+*(Placeholders — replace with actual assets)*
+
+| Visual | Purpose | Status |
+|--------|---------|--------|
+| ![Erosion GIF](./docs/assets/erosion-before-after.gif) | Side-by-side: 10s hydraulic erosion, heightmap before/after | 🟡 TODO |
+| ![Architecture](./docs/assets/arch-cpu-gpu.svg) | CPU vs. GPU memory flow: crossed-out "sync" arrow, tensor → compute → QEF mesh | 🟡 TODO |
+| ![Tensor Channels](./docs/assets/tensor-6chan.png) | Color-coded slice view: elevation, moisture, sediment, organics, hardness, porosity | 🟡 TODO |
+| ![Control Panel](./docs/assets/ui-controls.png) | Real-time sliders: rain intensity, evaporation, thermal weathering | 🟡 TODO |
+| ![Performance](./docs/assets/perf-badge.svg) | "10M cells @ 60 fps" + flame graph showing zero CPU stall | 🟡 TODO |
+
+> 💡 **Contributor opportunity**: Help us capture these! See [`CONTRIBUTING.md`](CONTRIBUTING.md) for asset guidelines.
+
+---
+
+## 🚀 Get Started in 5 Minutes
+
+**Requirements**:
+- WebGPU-capable browser (Chrome 113+, Edge 113+, or Firefox Nightly with `dom.webgpu.enabled`)
+- Node.js 18+
 
 ```bash
-npm install hyperpoly-terrain
+git clone https://github.com/COMMENCINGTHESCOURGE/hyperpoly-terrain.git
+cd hyperpoly-terrain
+npm install && npm run build
 ```
 
-```typescript
-// Basic usage (WebGPU)
-import { TerrainEngine, MaterialTensor } from 'hyperpoly-terrain';
+Then open `game/index.html` → see terrain evolve in real-time.
 
-const engine = new TerrainEngine({
-  resolution: 512,
-  channels: ['rock', 'soil', 'sand', 'water', 'ice', 'organic'],
-  targetFps: 60
-});
-
-const tensor = MaterialTensor.fromHeightmap(heightmapData);
-await engine.initialize(tensor);
-
-// Run simulation step
-engine.step(deltaTime);
-
-// Extract mesh for rendering
-const mesh = engine.extractMesh({ lod: 1.0 });
-render(mesh);
-```
-
-See [`examples/`](./examples/) for:
-- `raw-webgpu/` — Minimal WebGPU integration
-- `threejs-bridge/` — Three.js compatibility layer
-- `babylonjs-bridge/` — Babylon.js adapter
-- `react-hook/` — React component wrapper
+### 🔧 Quick Controls
+| Input | Effect |
+|-------|--------|
+| `R` | Toggle rain |
+| `+` / `-` | Adjust simulation timestep |
+| Mouse drag | Rotate camera |
+| Scroll | Zoom |
 
 ---
 
-## 📊 Performance Targets
+## 🧠 Core Concepts
 
-| Metric | Target | Current (v2.0.0-beta) |
-|--------|--------|----------------------|
-| Mesh Extraction (512³) | <2ms | 1.8ms (RTX 4070) |
-| Erosion Simulation Step | <5ms | 4.2ms (RTX 4070) |
-| Memory Footprint | <2GB | 1.6GB (512³, 6-channel) |
-| Host-GPU Sync Overhead | 0ms | ✅ Zero-copy pipeline |
+### Material Tensors (6 Channels)
+Each voxel stores a 6-channel material vector:
+1. **Elevation** (m) — height above datum
+2. **Moisture** (0–1) — surface water content
+3. **Sediment load** (kg/m²) — suspended particulate mass
+4. **Organics** (0–1) — biological material fraction
+5. **Rock hardness** (MPa) — resistance to erosion
+6. **Porosity** (0–1) — void fraction, affects fluid flow
 
-Run benchmarks:
-```bash
-npm run benchmark -- --resolution=512 --iterations=100
-```
+### Cohesion-Weighted QEF
+Mesh extraction uses a modified Quadratic Error Function that respects material cohesion boundaries — preserving cliffs, riverbanks, and stratigraphic layers without manual masking.
 
----
-
-## 🔌 Integration Paths
-
-### Three.js Bridge
-```typescript
-import { ThreeBridge } from 'hyperpoly-terrain/three';
-
-const bridge = new ThreeBridge(scene, camera);
-bridge.attach(engine); // Auto-syncs mesh + materials
-```
-
-### Native Backend (Experimental)
-We're evaluating **Filament** and **The Forge** for Vulkan/Metal native rendering. Track progress in [`native/`](./native/) or join the discussion in [RFC #12](https://github.com/COMMENCINGTHESCOURGE/hyperpoly-terrain/issues/12).
+### Zero Host-GPU Sync
+All simulation state lives on the GPU. No `readBuffer` calls. No frame stalls. The CPU only submits new parameters (e.g., "start rain") — never reads terrain data.
 
 ---
 
-## 📚 Documentation
+## 🤝 Contribute
 
-- [Architecture Deep Dive](./docs/ARCHITECTURE.md)
-- [Tensor Reference: 6-Channel Material Model](./docs/TENSORS.md)
-- [Vinculum Operator Framework Guide](./docs/VINCULUM.md)
-- [Performance Profiling Guide](./docs/PROFILING.md)
-- [Contributor Guide](./CONTRIBUTING.md)
+**Help shape what continuity computing can be.**  
+This project is experimental — some edges are sharp, some documentation still lives in WGSL comments. That's where you come in.
 
----
+👉 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for how to get started.
 
-## 🤝 Contributing
+**Good first issues**:
+- [ ] Add WGSL comments to `erosion/kernel.wgsl`
+- [ ] Write Python validator tests for tensor channel bounds
+- [ ] Document the tensor schema in `docs/tensor-spec.md`
 
-We welcome collaborators who share the continuity-engine philosophy. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for onboarding, coding standards, and the PR workflow.
+No PR is too small. Confusion is valuable feedback — open an issue and say *"I tried this and got stuck."*
 
 ---
 
@@ -148,4 +107,12 @@ We welcome collaborators who share the continuity-engine philosophy. See [`CONTR
 
 MIT © 2026 DaShawn McLaughlin / Guinea Pig Trench LLC
 
-*"Continuity is not a feature. It's the foundation."*
+---
+
+## 🔗 Part of MANIFOLD
+
+- [`trench-builder`](https://github.com/COMMENCINGTHESCOURGE/trench-builder) — Open-world integration demo
+- [`sovereign-resonance-node`](https://github.com/COMMENCINGTHESCOURGE/sovereign-resonance-node) — WebGL planet avatar + live pipeline HUD
+- [`erdos-straus-solver`](https://github.com/COMMENCINGTHESCOURGE/erdos-straus-solver) — Mathematical utility for integer field constraints
+
+> *"Continuity is not a feature. It's the foundation."*
