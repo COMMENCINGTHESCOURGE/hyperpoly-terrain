@@ -1,0 +1,22 @@
+# hyperpoly-terrain/native/Makefile.wasm
+
+CXX = emcc
+CXXFLAGS = -O3 -pthread -s USE_PTHREADS=1 \
+           -s PTHREAD_POOL_SIZE=navigator.hardwareConcurrency \
+           -s INITIAL_MEMORY=256MB \
+           -s MAXIMUM_MEMORY=1GB \
+           -s ALLOW_MEMORY_GROWTH=1 \
+           -s WASM=1 \
+           -s EXPORTED_RUNTIME_METHODS=['ccall','cwrap'] \
+           -s ENVIRONMENT='web' \
+           -I ./filament/src
+
+TARGET = ../dist/filament.wasm
+
+SRC = filament/src/TerrainRenderer.cpp \
+      filament/src/WebGPUInterop.cpp
+
+all: $(TARGET)
+
+$(TARGET): $(SRC)
+	$(CXX) $(CXXFLAGS) $(SRC) -o ../dist/filament.js
