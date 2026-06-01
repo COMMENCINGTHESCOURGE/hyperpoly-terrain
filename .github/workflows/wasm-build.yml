@@ -1,0 +1,35 @@
+name: Emscripten WASM Matrix
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build-wasm:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Emscripten
+      uses: mymindstorm/setup-emsdk@v12
+      with:
+        version: latest
+        actions-cache-folder: 'emsdk-cache'
+
+    - name: Verify Emscripten Toolchain
+      run: emcc -v
+
+    - name: Execute Makefile.wasm
+      run: |
+        cd native
+        make -f Makefile.wasm
+        
+    - name: Validate Artifacts
+      run: |
+        if [ ! -f "dist/filament.wasm" ]; then
+          echo "Build failed: filament.wasm not found!"
+          exit 1
+        fi
+        echo "WASM compilation verified."

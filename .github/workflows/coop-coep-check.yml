@@ -1,0 +1,30 @@
+name: COOP/COEP Isolation Check
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  validate-headers:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Setup Node
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+
+    - name: Verify Vercel configuration
+      run: |
+        if ! grep -q "Cross-Origin-Opener-Policy" vercel.json; then
+          echo "FATAL: COOP header missing from vercel.json"
+          exit 1
+        fi
+        if ! grep -q "Cross-Origin-Embedder-Policy" vercel.json; then
+          echo "FATAL: COEP header missing from vercel.json"
+          exit 1
+        fi
+        echo "Cross-origin isolation headers verified in Vercel config."
