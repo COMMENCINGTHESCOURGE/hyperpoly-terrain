@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <cstdint>
+#include <cstddef>
 
 // MANIFOLD 6-Channel Tensor
 struct alignas(32) Tensor6 {
