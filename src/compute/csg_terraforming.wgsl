@@ -15,8 +15,13 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let idx = get_index(id);
     let voxel = state_in.cells[idx];
     
-    // World pos (assuming 1 unit per voxel for simplicity)
-    let pos = vec3<f32>(f32(id.x), f32(id.y), f32(id.z));
+    // Convert invocation id (Cubemap layout) to spherical direction
+    // id.z represents the cubemap face (0-5)
+    let uv = vec2<f32>(f32(id.x) / f32(params.grid_size.x), f32(id.y) / f32(params.grid_size.y));
+    let dir = face_uv_to_dir(id.z, uv);
+    
+    // Project to sphere surface (radius = 40.0)
+    let pos = dir * 40.0;
     
     let dist = distance(pos, csg_params.center);
     if (dist > csg_params.radius) {
