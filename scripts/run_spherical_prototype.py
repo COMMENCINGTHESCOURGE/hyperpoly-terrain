@@ -13,7 +13,7 @@ import math
 import numpy as np
 
 # Resolution parameter: N x N grid per cubemap face
-N = 16
+N = 32
 CHANNELS = 12
 
 # Channel mapping definitions
@@ -515,8 +515,8 @@ def main():
     print(f"[Init] Global Sphere Conservative Mass (Post-Crater): {initial_mass:.4f} units")
     print(f"[Init] Target Thermal Stability Baseline: {target_thermal:.4f}")
     
-    # 4. Execute Simulation loop for 50 epochs
-    epochs = 50
+    # 4. Execute Simulation loop for 100 epochs
+    epochs = 100
     print(f"[Sim] Executing {epochs} timesteps under Vinculum DAG sequence...")
     
     sieve = SubstrateSieve(tolerance=0.05)
