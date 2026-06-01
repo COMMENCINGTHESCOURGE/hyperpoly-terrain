@@ -1,0 +1,80 @@
+name: 🌐 Crosspollination Adapter Submission
+description: Submit a domain mapping to extend the continuity engine into your field.
+title: "[Adapter]: <Your Domain> → 6-Channel Tensor Mapping"
+labels: ["crosspollination", "adapter", "enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for extending the continuity engine! This template ensures your adapter aligns with the core substrate-agnostic pipeline:
+        `Material Tensor → Cohesion-Weighted QEF → Conservation Validation → Field/Mesh Emission`
+
+  - type: input
+    id: domain_name
+    attributes:
+      label: Domain Name
+      description: e.g., LiDAR Point Clouds, Drone Swarms, Policy Simulation, Neural Fields
+    validations:
+      required: true
+
+  - type: textarea
+    id: channel_mapping
+    attributes:
+      label: 6-Channel Tensor Mapping
+      description: Map your domain's semantics to the material tensor channels. Use the table format from CROSSPOLLINATION.md.
+      placeholder: |
+        | Channel | Terrain Semantics | Your Domain Semantics |
+        |---------|------------------|----------------------|
+        | 0 | Density | point_density |
+        | 1 | Cohesion | phase_alignment_score |
+        | 2 | Permeability | sensor_fusion_weight |
+        | 3 | Water | temporal_consistency_flow |
+        | 4 | Sediment | calibration_anchor_strength |
+        | 5 | Oxidation | drift_accumulation |
+    validations:
+      required: true
+
+  - type: textarea
+    id: conservation_law
+    attributes:
+      label: Domain Conservation Law
+      description: What quantity must be preserved (or bounded) in your domain? Provide the mathematical or logical constraint.
+      placeholder: e.g., "Total trust mass ∑T must satisfy |∫before - ∫after| < 1e-4"
+    validations:
+      required: true
+
+  - type: textarea
+    id: validation_code
+    attributes:
+      label: Validation/Adaptation Code (Optional)
+      description: Snippet showing how you reused `qef_solve`, `validate_conservation`, or extended `chroma_layers.py`.
+      render: python
+    validations:
+      required: false
+
+  - type: textarea
+    id: visual_or_metric_hook
+    attributes:
+      label: Diagnostic / HUD Hook
+      description: How does your domain map to CHROMA spectral layers (IR/visible/UV) or pipeline metrics?
+      placeholder: e.g., "IR = pre-calibration noise floor, UV = post-fit residual variance"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: acceptance
+    attributes:
+      label: ✅ Adapter Readiness
+      options:
+        - label: I've mapped all 6 tensor channels to my domain semantics
+        - label: I've defined a conservation/continuity constraint
+        - label: I've verified compatibility with `hyperpoly-terrain`'s core pipeline
+        - label: I understand this is an architectural extension, not a fork
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        🔹 **Next Steps**: Maintainers will review mapping alignment, run conservation tests, and merge into `adapters/<domain>/`.  
+        🔹 **Questions?** Reply to this issue or tag `@COMMENCINGTHESCOURGE` for architecture guidance.
