@@ -46,6 +46,13 @@ const VOXELS_PER_BRICK: u32 = 4096u;
 // ── Helper: Encode with Range Expansion Detection ─────────────
 fn encode_with_expansion(ch: u32, brick_idx: u32, local_idx: u32, val: f32, dst: ptr<function, array<F16>>) -> bool {
   let meta = brick_meta[brick_idx * 6u + ch];
+  
+  // Guard against division by zero
+  if (meta.y < 1e-6) {
+    (*dst)[brick_idx * VOXELS_PER_BRICK + local_idx] = f16_encode(clamp(val, 0.0, 1.0));
+    return false; // No expansion needed if range is degenerate
+  }
+  
   let norm = (val - meta.x) / meta.y;
 
   let needs_expand_min = (val < meta.x);
@@ -108,10 +115,12 @@ fn inject_pass(@builtin(global_invocation_id) gid: vec3<u32>) {
 
         if (cmd.material_type == 0u) { // Carve → Air
           let t = smoothstep(cmd.radius, cmd.radius * (1.0 - cmd.falloff), d);
-          new_density = mix(0.0, 1.0, t);
+          // t=1 at outer edge (should stay solid), t=0 at center (should be air)
+          // So density goes from 1.0 (outer) to 0.0 (center) as we carve inward
+          new_density = mix(0.0, 1.0, t);  // Correct: 1.0 * t + 0.0 * (1-t)
           new_cohesion = mix(0.0, 1.0, t);
           new_perm = 1.0;
-          clear_water = (t > 0.5); // Clear water in fully carved voxels
+          clear_water = (t < 0.5); // Clear water in carved voxels (center)
         } else if (cmd.material_type == 1u) { // Inject Ore
           let t = smoothstep(cmd.radius * 0.5, cmd.radius, d);
           new_density = mix(0.95, 0.5, t);
@@ -124,17 +133,19 @@ fn inject_pass(@builtin(global_invocation_id) gid: vec3<u32>) {
         }
 
         // Encode with range expansion detection
+        // Note: atomicMin/atomicMax expect u32 pointers, so ensure the buffers are u32
         if (encode_with_expansion(0u, brick_idx, local_idx, new_density, &density_u16)) {
-          atomicMin(&edit_min_buffer[brick_idx * 6u + 0u], F16(new_density));
-          atomicMax(&edit_max_buffer[brick_idx * 6u + 0u], F16(new_density));
+          // Store expanded bounds as u32 bit patterns representing F16 values
+          atomicMin(&edit_min_buffer[brick_idx * 6u + 0u], f16_bits(new_density));
+          atomicMax(&edit_max_buffer[brick_idx * 6u + 0u], f16_bits(new_density));
         }
         if (encode_with_expansion(1u, brick_idx, local_idx, new_cohesion, &cohesion_u16)) {
-          atomicMin(&edit_min_buffer[brick_idx * 6u + 1u], F16(new_cohesion));
-          atomicMax(&edit_max_buffer[brick_idx * 6u + 1u], F16(new_cohesion));
+          atomicMin(&edit_min_buffer[brick_idx * 6u + 1u], f16_bits(new_cohesion));
+          atomicMax(&edit_max_buffer[brick_idx * 6u + 1u], f16_bits(new_cohesion));
         }
         if (encode_with_expansion(2u, brick_idx, local_idx, new_perm, &perm_x_u16)) {
-          atomicMin(&edit_min_buffer[brick_idx * 6u + 2u], F16(new_perm));
-          atomicMax(&edit_max_buffer[brick_idx * 6u + 2u], F16(new_perm));
+          atomicMin(&edit_min_buffer[brick_idx * 6u + 2u], f16_bits(new_perm));
+          atomicMax(&edit_max_buffer[brick_idx * 6u + 2u], f16_bits(new_perm));
         }
 
         // Clear water in carved voids (prevent physics explosion)

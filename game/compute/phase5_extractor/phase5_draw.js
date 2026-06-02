@@ -23,6 +23,14 @@ export class Phase5Draw {
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
     });
 
+    // ISO threshold uniform buffer (1 f32 = 4 bytes)
+    this.isoThresholdBuffer = device.createBuffer({
+      size: 4,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    // Default ISO threshold = 0.5
+    device.queue.writeBuffer(this.isoThresholdBuffer, 0, new Float32Array([0.5]));
+
     // Indirect draw args: [indexCount, instanceCount, firstIndex, baseVertex, firstInstance]
     this.drawArgsBuffer = device.createBuffer({
       size: 20,
@@ -59,7 +67,11 @@ export class Phase5Draw {
     });
   }
 
-  _createTopologyBG(qefBuffer, hermiteBuffer, isoThreshold) {
+  _createTopologyBG(qefBuffer, hermiteBuffer, isoThresholdValue) {
+    // Update ISO threshold buffer if a value is provided
+    if (isoThresholdValue !== undefined) {
+      this.device.queue.writeBuffer(this.isoThresholdBuffer, 0, new Float32Array([isoThresholdValue]));
+    }
     return this.device.createBindGroup({
       layout: this.pipelines.topology.getBindGroupLayout(0),
       entries: [
@@ -67,7 +79,7 @@ export class Phase5Draw {
         { binding: 1, resource: { buffer: hermiteBuffer } },
         { binding: 2, resource: { buffer: this.indexBuffer } },
         { binding: 3, resource: { buffer: this.indexCountBuffer } },
-        { binding: 4, resource: { buffer: isoThreshold } },
+        { binding: 4, resource: { buffer: this.isoThresholdBuffer } },
       ],
     });
   }
@@ -84,24 +96,28 @@ export class Phase5Draw {
 
   /**
    * Full mesh build: topology generation + LOD stitching + draw args.
+   * 
+   * Topology: generates faces for all 255³ cells.
+   * LOD stitching: corrects seams between LOD levels.
    */
-  async buildMesh(qefBuffer, hermiteBuffer, lodBuffer, isoThresholdValue) {
+  async buildMesh(qefBuffer, hermiteBuffer, lodBuffer, isoThresholdValue = 0.5) {
     const device = this.device;
     const encoder = device.createCommandEncoder();
 
     // Reset index count
     device.queue.writeBuffer(this.indexCountBuffer, 0, new Uint32Array([0]));
 
-    // --- Pass 1: Topology generation ---
+    // --- Pass 1: Topology generation (full 3D: 255³ cells) ---
     {
       const pass = encoder.beginComputePass();
       pass.setPipeline(this.pipelines.topology);
       pass.setBindGroup(0, this._createTopologyBG(qefBuffer, hermiteBuffer, isoThresholdValue));
-      pass.dispatchWorkgroups(32, 32, 1);  // 255 × 255 cells in XY
+      // Dispatch: 32×32×32 workgroups = 1024³ threads covering 255³ cells
+      pass.dispatchWorkgroups(32, 32, 32);
       pass.end();
     }
 
-    // --- Pass 2: LOD stitching ---
+    // --- Pass 2: LOD stitching (full 3D: 255³ cells) ---
     {
       const pass = encoder.beginComputePass();
       pass.setPipeline(this.pipelines.stitch);
@@ -113,8 +129,7 @@ export class Phase5Draw {
     // --- Update indirect draw args ---
     // copy indexCount → drawArgs[0] (indexCount)
     encoder.copyBufferToBuffer(this.indexCountBuffer, 0, this.drawArgsBuffer, 0, 4);
-    // Set instanceCount = 1 (at offset 4)
-    // In a separate writeBuffer:
+    // Set instanceCount = 1, firstIndex = 0, baseVertex = 0, firstInstance = 0
     device.queue.writeBuffer(this.drawArgsBuffer, 4, new Uint32Array([1, 0, 0, 0]));
 
     device.queue.submit([encoder.finish()]);
@@ -149,7 +164,7 @@ export class Phase5Draw {
   }
 
   destroy() {
-    const bufs = ['indexBuffer', 'indexCountBuffer', 'drawArgsBuffer', 'readbackBuffer'];
+    const bufs = ['indexBuffer', 'indexCountBuffer', 'isoThresholdBuffer', 'drawArgsBuffer', 'readbackBuffer'];
     for (const key of bufs) {
       if (this[key]) this[key].destroy();
     }
