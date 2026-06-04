@@ -4,6 +4,10 @@ project(HyperpolyWindDemo)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Build configuration toggles
+option(NATIVE_SIMULATION "Enable native C++ simulation (vs WebGPU fallback)" ON)
+option(BINARY_EXPORT "Export compiled .filamat materials as binary assets" ON)
+
 # Point to your Filament SDK
 set(FILAMENT_DIR "${CMAKE_SOURCE_DIR}/../filament" CACHE PATH "Path to Filament SDK")
 find_package(Filament REQUIRED PATHS ${FILAMENT_DIR})

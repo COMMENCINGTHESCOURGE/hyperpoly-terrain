@@ -219,6 +219,7 @@ int main(int argc, char* argv[]) {
     float time = 0.0f;
     bool running = true;
     SDL_Event ev;
+    uint32_t lastFrameTime = SDL_GetTicks();
 
     while (running) {
         while (SDL_PollEvent(&ev)) {
@@ -226,7 +227,11 @@ int main(int argc, char* argv[]) {
             if (ev.type == SDL_KEYDOWN && ev.key.keysym.sym == SDLK_ESCAPE) running = false;
         }
 
-        time += 0.016f;
+        uint32_t currentTime = SDL_GetTicks();
+        float dt = (currentTime - lastFrameTime) / 1000.0f;
+        lastFrameTime = currentTime;
+        time += dt;
+
         matInstance->setParameter("time", time);
         matInstance->setParameter("windDirection", float3{1.0f, 0.0f, 0.3f});
         matInstance->setParameter("windStrength", 1.2f);

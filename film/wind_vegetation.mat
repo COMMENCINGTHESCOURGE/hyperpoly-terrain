@@ -8,6 +8,7 @@
 
 material {
     name : WindVegetation,
+    requires : [custom0, custom1],
     parameters : [
         { type : float,  name : time },
         { type : float3, name : windDirection },
