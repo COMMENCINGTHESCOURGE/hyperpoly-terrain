@@ -6,12 +6,22 @@
  * Writes GPU-visible dual vertex buffer for rendering.
  */
 
+const CHANNELS = {
+  DENSITY: 0,
+  SEDIMENT: 1,
+  PERM_X: 2,
+  PERM_Y: 3,
+  PERM_Z: 4,
+  COHESION: 5,
+};
+
 export class Phase5Extractor {
   constructor(device, gridSize = 256) {
     this.device = device;
     this.gridSize = gridSize;
     this.cellCount = (gridSize - 1) ** 3;    // 255³
     this.vertexCount = (gridSize + 1) ** 3;   // 257³
+    this.CHANNELS = CHANNELS;
 
     this._createBuffers();
     this.pipelines = {};
@@ -91,6 +101,13 @@ export class Phase5Extractor {
   }
 
   _createHermiteBG(metaBuffer, densityBuf, cohesionBuf, permXBuf) {
+    // Validate buffers exist and are GPU buffers
+    if (!densityBuf || !cohesionBuf || !permXBuf || !metaBuffer) {
+      throw new Error('Phase5Extractor: hermite bind group missing required buffers (density, cohesion, permX, meta)');
+    }
+    if (!densityBuf.size || !cohesionBuf.size || !permXBuf.size || !metaBuffer.size) {
+      throw new Error('Phase5Extractor: hermite buffers have zero size');
+    }
     return this.device.createBindGroup({
       layout: this.pipelines.hermite.getBindGroupLayout(0),
       entries: [
@@ -139,12 +156,13 @@ export class Phase5Extractor {
     });
   }
 
-  async fullExtract(metaBuffer, channelBuffers, brickMetaBuffer) {
+  async fullExtract(metaBuffer, channelBuffers, brickMetaBuffer, qefParams = { tolerance: 0.3, weightThreshold: 0.01 }) {
     const device = this.device;
     const encoder = device.createCommandEncoder();
 
-    // Set QEF params
-    device.queue.writeBuffer(this.qefParamsBuffer, 0, new Float32Array([0.3, 0.01]));
+    // Set QEF params (configurable per-call)
+    const paramData = new Float32Array([qefParams.tolerance, qefParams.weightThreshold]);
+    device.queue.writeBuffer(this.qefParamsBuffer, 0, paramData);
 
     // Pass 1: Hermite data generation (32×32×32 workgroups = 256³ vertices)
     {
@@ -181,6 +199,7 @@ export class Phase5Extractor {
     const copyEncoder = device.createCommandEncoder();
     copyEncoder.copyBufferToBuffer(this.vertexBuffer, 0, this.prevVertexBuffer, 0, this.cellCount * 12);
     device.queue.submit([copyEncoder.finish()]);
+    await device.queue.onSubmittedWorkDone();
   }
 
   async incrementalExtract(brickMetaBuffer) {
@@ -207,6 +226,7 @@ export class Phase5Extractor {
     const readEncoder = device.createCommandEncoder();
     readEncoder.copyBufferToBuffer(this.deltaCountBuffer, 0, readback, 0, 4);
     device.queue.submit([readEncoder.finish()]);
+    await device.queue.onSubmittedWorkDone();
 
     await readback.mapAsync(GPUMapMode.READ);
     const count = new Uint32Array(readback.getMappedRange())[0];
@@ -217,6 +237,7 @@ export class Phase5Extractor {
     const copyEncoder = device.createCommandEncoder();
     copyEncoder.copyBufferToBuffer(this.vertexBuffer, 0, this.prevVertexBuffer, 0, this.cellCount * 12);
     device.queue.submit([copyEncoder.finish()]);
+    await device.queue.onSubmittedWorkDone();
 
     return count;
   }

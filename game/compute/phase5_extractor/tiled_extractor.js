@@ -120,6 +120,12 @@ export class TiledExtractor {
       size: 8,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
+
+    // Tile offset uniform (vec3<u32> = 12 bytes, padded to 16)
+    this.tileOffsetBuffer = this.device.createBuffer({
+      size: 16,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
   }
 
   async init(wgslSources) {
@@ -163,6 +169,10 @@ export class TiledExtractor {
     for (let tz = 0; tz < this.tilesPerDim; tz++) {
       for (let ty = 0; ty < this.tilesPerDim; ty++) {
         for (let tx = 0; tx < this.tilesPerDim; tx++) {
+          // Tile loop offset for global buffer writes
+          const tileOffsetData = new Uint32Array([vx0, vy0, vz0, 0]); // padding
+          queue.writeBuffer(this.tileOffsetBuffer, 0, tileOffsetData);
+
           const encoder = device.createCommandEncoder();
 
           // Compute tile bounds in vertex space
@@ -242,13 +252,14 @@ export class TiledExtractor {
   }
 
   _createQEFBG_Tiled(tileX, tileY, tileZ) {
-    // TODO: Add tile_offset uniform binding once WGSL accepts it
+    // Now includes tile_offset uniform binding
     return this.device.createBindGroup({
       layout: this.pipelines.qef.getBindGroupLayout(0),
       entries: [
         { binding: 0, resource: { buffer: this.tileHermiteBuffer } },
         { binding: 1, resource: { buffer: this.vertexBuffer } },
         { binding: 2, resource: { buffer: this.qefParamsBuffer } },
+        { binding: 3, resource: { buffer: this.tileOffsetBuffer } },
       ],
     });
   }
@@ -261,16 +272,25 @@ export class TiledExtractor {
         { binding: 1, resource: { buffer: permXBuf } },
         { binding: 2, resource: { buffer: this.lodBuffer } },
         { binding: 3, resource: { buffer: metaBuffer } },
+        { binding: 4, resource: { buffer: this.tileOffsetBuffer } },
       ],
     });
   }
 
   getVertexBuffer() { return this.vertexBuffer; }
   getLODBuffer() { return this.lodBuffer; }
+
+  destroy() {
+    const bufs = ['vertexBuffer', 'prevVertexBuffer', 'lodBuffer', 'tileHermiteBuffer',
+                  'deltaBuffer', 'deltaCountBuffer', 'qefParamsBuffer', 'tileOffsetBuffer'];
+    for (const key of bufs) {
+      if (this[key]) this[key].destroy();
+    }
+  }
 }
 
 /* 
- * WGSL SHADER MODIFICATION REQUIRED
+ * WGSL SHADER MODIFICATIONS REQUIRED
  * 
  * The hermite and qef shaders currently compute global vertex indices
  * from global_invocation_id. For tiled extraction, they need an
@@ -283,11 +303,15 @@ export class TiledExtractor {
  *   let vx = gid.x + 1u + tile_offset.x;
  *   let vy = gid.y + 1u + tile_offset.y;
  *   let vz = gid.z + 1u + tile_offset.z;
+ *   let vertex_idx = vx + vy * GRID_SIZE + vz * GRID_SIZE * GRID_SIZE;
  *   
- * Without this uniform, the shaders must be modified or the tiled
- * approach requires one bind group per tile position (impractical).
+ *   // In qef_solve, similarly adjust cell indices:
+ *   let cx = gid.x + tile_offset.x;
+ *   let cy = gid.y + tile_offset.y;
+ *   let cz = gid.z + tile_offset.z;
  * 
- * For a minimal first pass: use the original full-hermite allocation
- * and only tile the QEF+LOD passes (which are smaller). That drops
- * peak from 942MB to ~667MB with less shader modification.
+ * Binding locations:
+ *   hermite: binding(5) = tile_offset
+ *   qef: binding(3) = tile_offset
+ *   lod: binding(4) = tile_offset
  */

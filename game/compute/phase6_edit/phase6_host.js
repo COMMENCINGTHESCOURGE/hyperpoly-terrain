@@ -13,8 +13,8 @@ export class EditManager {
     this.nextSlot = 0;
     this.pendingCount = 0;
 
-    // Command descriptor
-    this.commandByteSize = 32; // sizeof(EditCommand) padded
+    // Command descriptor: center(12B) + radius(4B) + materialType(4B) + falloff(4B) = 24 bytes
+    this.commandByteSize = 24;
 
     // Ring buffer for edit commands (GPU-visible)
     this.editBuffer = device.createBuffer({
@@ -163,7 +163,17 @@ export class EditManager {
     pass.dispatchWorkgroups(wgX, wgY, 1);
     pass.end();
 
-    // Reset counter for next frame
+    // NOTE: Do NOT reset editCountBuffer here. It must be reset AFTER
+    // this encoder finishes on the GPU. Use resetEditCount() as a separate
+    // GPU pass or call it after await device.queue.onSubmittedWorkDone().
+  }
+
+  /**
+   * Reset edit counter. Must be called AFTER applyEdits() GPU work is done.
+   * Can be called on a separate command encoder or via writeBuffer after
+   * GPU completion.
+   */
+  resetEditCount() {
     this.device.queue.writeBuffer(this.editCountBuffer, 0, new Uint32Array([0]));
     this.pendingCount = 0;
   }
