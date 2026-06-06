@@ -67,11 +67,6 @@ fn cell_idx(c: vec3<u32>) -> u32 {
   return c.x + c.y * CELLS + c.z * CELL_STRIDE;
 }
 
-fn sign_change(density: f32) -> bool {
-  return (density - ISO_THRESHOLD) * (density - ISO_THRESHOLD) < 1.0;
-  // Actually: check if any of 8 corners straddle the iso surface
-}
-
 // ── Ray-Cell Intersection ──
 // Tests whether the ray passes through the implicit surface
 // defined by the QEF vertex in this cell.
@@ -185,3 +180,7 @@ fn raycast_pass(@builtin(global_invocation_id) gid: vec3<u32>) {
 
   hit_output[ray_idx] = closest;
 }
+
+// Zero-trust invariant: verify no NaN propagation through collision chain
+ASSERT(!isnan(closest.pos.x) && !isnan(closest.pos.y) && !isnan(closest.pos.z));
+ASSERT(closest.t >= 0.0);

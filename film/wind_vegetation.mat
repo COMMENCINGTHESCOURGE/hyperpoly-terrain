@@ -1,0 +1,113 @@
+/*
+ * HYPERPOLY WIND VEGETATION
+ * Per-instance wind deformation — FBM noise, LOD fade, small-angle rotation.
+ * CUSTOM0: instance world position (float3, per-instance)
+ * CUSTOM1: material tensor index (float, per-instance) — indexes the 6-channel tensor texture
+ * materialTensor: 1D RGBA32F texture — [cohesion, yield, density, moisture] per entry
+ */
+
+material {
+    name : WindVegetation,
+    requires : [custom0, custom1],
+    parameters : [
+        { type : float,  name : time },
+        { type : float3, name : windDirection },
+        { type : float,  name : windStrength },
+        { type : float,  name : noiseScale },
+        { type : float3, name : cameraPosition },
+        { type : float,  name : lodDistance },
+        { type : sampler2d, name : materialTensor }
+    ],
+    shadingModel : lit,
+    doubleSided : false
+}
+
+vertex {
+    float hash3D(vec3 p) {
+        return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453);
+    }
+
+    float noise3D(vec3 p) {
+        vec3 i = floor(p);
+        vec3 f = fract(p);
+        vec3 u = f * f * (3.0 - 2.0 * f);
+
+        float c000 = hash3D(i);
+        float c100 = hash3D(i + vec3(1,0,0));
+        float c010 = hash3D(i + vec3(0,1,0));
+        float c110 = hash3D(i + vec3(1,1,0));
+        float c001 = hash3D(i + vec3(0,0,1));
+        float c101 = hash3D(i + vec3(1,0,1));
+        float c011 = hash3D(i + vec3(0,1,1));
+        float c111 = hash3D(i + vec3(1,1,1));
+
+        return mix(
+            mix(mix(c000, c100, u.x),
+                mix(c010, c110, u.x), u.y),
+            mix(mix(c001, c101, u.x),
+                mix(c011, c111, u.x), u.y),
+            u.z
+        );
+    }
+
+    float fbm(vec3 p) {
+        float value = 0.0;
+        float amp = 0.6;
+        float freq = 1.0;
+        value += amp * noise3D(p * freq);
+        freq *= 2.0; amp *= 0.5;
+        value += amp * noise3D(p * freq);
+        return value;
+    }
+
+    void materialVertex(inout MaterialVertexInputs material) {
+        vec3 worldPos = getCustom0().xyz;
+        float matIdx = getCustom1().x;
+
+        // LOD fade
+        float dist = distance(worldPos, materialParams.cameraPosition);
+        float fade = 1.0 - smoothstep(materialParams.lodDistance * 0.7,
+                                      materialParams.lodDistance, dist);
+
+        // Fetch cohesion from material tensor
+        vec4 tensorSample = texelFetch(materialTensor, ivec2(int(matIdx), 0), 0);
+        float cohesion = tensorSample.r;
+
+        // Cohesion modulates wind response: low cohesion -> more sway
+        float flutterSpeed = 8.5;
+        float baseResponse = 0.35;
+        float response = baseResponse * mix(1.5, 0.3, cohesion);
+        float swayAmount = 0.12;
+
+        float t = materialParams.time * flutterSpeed;
+        vec3 windPos = worldPos * materialParams.noiseScale
+                      + vec3(t * 0.3, t * 0.5, t * 0.4);
+        float windVal = fbm(windPos);
+        float sway = sin(materialParams.time * 1.2 + worldPos.x * 0.3) * swayAmount;
+        float force = materialParams.windStrength * response * windVal * fade;
+
+        float rotZ = materialParams.windDirection.x * force;
+        float rotX = materialParams.windDirection.z * force;
+        mat3 rot = mat3(
+            cos(rotZ), -sin(rotZ), 0,
+            sin(rotZ),  cos(rotZ), 0,
+            0,          0,          1
+        ) * mat3(
+            1, 0,           0,
+            0, cos(rotX), -sin(rotX),
+            0, sin(rotX),  cos(rotX)
+        );
+
+        material.vertex.xyz = rot * material.vertex.xyz;
+        material.vertex.x += sway;
+    }
+}
+
+fragment {
+    void material(inout MaterialInputs material) {
+        prepareMaterial(material);
+        material.baseColor = vec4(0.3, 0.5, 0.2, 1.0);
+        material.roughness = 0.8;
+        material.metallic  = 0.0;
+    }
+}

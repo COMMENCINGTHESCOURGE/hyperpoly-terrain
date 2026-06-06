@@ -10,11 +10,15 @@ import { MinimalAudio } from './minimal_audio.js';
 import { EditManager } from './phase6_edit/phase6_host.js';
 import { Phase5Extractor } from './phase5_extractor/phase5_host.js';
 import { Phase5Draw } from './phase5_extractor/phase5_draw.js';
+import { MaterialCalibration } from './material_calibration.js';
 
 export class PlayableWorld {
   constructor(canvas, device) {
     this.canvas = canvas;
     this.device = device;
+    this._wgpuContext = null;
+    this._depthTexture = null;
+    this._terrainRenderer = null;
 
     // Initialize layers
     this.engine = new HyperPolyGeology(device, 256);
@@ -33,6 +37,17 @@ export class PlayableWorld {
   }
 
   async init(shellModelGenerator, wgslSources) {
+    // Load material calibration from PBR texture statistics
+    try {
+      const cal = await MaterialCalibration.load('calibration/calibration.json');
+      cal.setProfile('gravel');
+      shellModelGenerator = cal.wrapGenerator(shellModelGenerator, 'gravel');
+      this._calibration = cal;
+      console.log('Material calibration loaded: gravel profile');
+    } catch (e) {
+      console.warn('Material calibration not available, using procedural defaults:', e.message);
+    }
+
     // Upload terrain
     await this.engine.uploadQuantizedTerrain(shellModelGenerator);
 
@@ -130,13 +145,12 @@ export class PlayableWorld {
   }
 
   _render() {
-    // Simplified render — in production, use the existing Three.js renderer
-    // or the DrawIndirect pipeline from phase5_draw.js
+    // WebGPU render via TerrainRenderer (if wired from bridge.html)
+    if (this._terrainRenderer && this.extractor && this.draw) {
+      return;
+    }
+    // Fallback: keep original empty encoder for Three.js mode
     const encoder = this.device.createCommandEncoder();
-
-    // ... render pass with vertex/index buffers from this.draw ...
-    // (Production: wire into your existing Three.js/WebGL2 render loop)
-
     this.device.queue.submit([encoder.finish()]);
   }
 }

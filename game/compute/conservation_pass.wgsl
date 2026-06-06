@@ -8,6 +8,7 @@
 @group(0) @binding(0) var<storage, read> water_dst_u16: array<F16>;
 @group(0) @binding(1) var<storage, read_write> water_corrected_u16: array<F16>;
 @group(0) @binding(2) var<uniform> brick_meta: array<vec4<f32>>;
+@group(0) @binding(3) var<storage, read> initial_brick_water_mass: array<f32>;
 
 var<workgroup> wg_sum: array<f32, 256>;
 
@@ -33,13 +34,12 @@ fn conservation_pass(@builtin(global_invocation_id) gid: vec3<u32>,
     shift >>= 1u;
   }
 
-  // Thread 0 computes correction, distributes evenly
+  // Thread 0 computes correction using the INITIAL brick mass as baseline
   if (local_idx == 0u) {
-    let expected_mass = 4096.0 * meta.x; // Baseline for dry brick
+    let expected_mass = initial_brick_water_mass[brick_idx];
     let drift = (wg_sum[0] - expected_mass) / 4096.0;
 
     // Apply distributed correction to all voxels in this brick
-    // Re-read, correct, re-encode
     for (var i = 0u; i < 4096u; i++) {
       let raw = water_dst_u16[brick_idx * 4096u + i];
       let decoded = meta.x + f16_decode(raw) * meta.y;
