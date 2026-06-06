@@ -1,3 +1,10 @@
+// vinculum: injection_mass / edit_volume
+//   Density of material modifications per edit operation.
+//   Higher values = more aggressive terrain carving / ore placement.
+// layer: simulation
+// domain: terrain (maps to housing as construction_density / demolition_rate,
+//          zombie as terrain_penetration / barrier_breach)
+//
 // ──────────────────────────────────────────────────────────────
 // PHASE 6A: ATOMIC MATERIAL INJECTION (Carving + Ore Placement)
 // ─────────────────────────────────────────────────────────────

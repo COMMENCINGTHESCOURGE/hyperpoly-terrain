@@ -1,3 +1,10 @@
+// vinculum: vertex_error / hermit_data_support
+//   Root-mean-square error of the QEF solution per cell.
+//   Low = near-perfect surface fit, high = approximation.
+// layer: extraction
+// domain: terrain (maps to swarm as consensus_error / vote_divergence,
+//          AI as loss / prediction_certainty)
+//
 // ──────────────────────────────────────────────────────────────
 // PHASE 5: QEF SOLVE (Quadratic Error Function with Features)
 // ──────────────────────────────────────────────────────────────

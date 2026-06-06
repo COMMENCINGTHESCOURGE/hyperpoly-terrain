@@ -1,3 +1,15 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Guinea Pig Trench LLC (PA #13674084)
+// Credit Facility: Truth Holds Enterprise (PA #7049023)
+//
+// vinculum: cell_occupancy / ray_path_length
+//   The ratio of voxel cells the ray tests that contain surface
+//   vs. the total length of the ray. Lower = more empty space skipped.
+//
+// layer: simulation
+// domain: terrain (maps to swarm as agent_vision / terrain_occupancy,
+//          legal as document_graph / search_space)
+//
 // ──────────────────────────────────────────────────────────────
 // COLLISION: Voxel DDA Raycast + Sphere-Cast
 // ──────────────────────────────────────────────────────────────

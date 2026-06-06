@@ -5,6 +5,19 @@ Run inside Blender:  blender --background --python film.py
 Or headless:         blender -b -P film.py
 
 Act structure: DAWN(0-8) → NOON(8-18) → DUSK(18-28) → NIGHT(28-30)
+
+RENDER BUDGET:
+  Full 30min at 1080p/24fps (43,200 frames)
+    Cycles: ~2s/frame → ~24 hours GPU render time
+    Eevee:  ~0.2s/frame → ~2.4 hours
+
+  Use --preview for iteration:
+    blender --background --python film.py -- --preview 1
+    Renders 480p, 10fps, 1 minute of content → ~600 frames
+    Cycles estimate: ~20 minutes. Eevee: ~2 minutes.
+
+  Kaggle P100 GPU can render ~3-4 full passes per month
+  within the 30-hour GPU quota.
 """
 import bpy
 import math
@@ -21,6 +34,23 @@ RESOLUTION_X = 1280
 RESOLUTION_Y = 720
 RENDER_ENGINE = 'CYCLES'
 DEVICE = 'GPU'
+
+# ── Preview mode: override config for fast iteration ──
+# Usage: blender --background --python film.py -- --preview
+# Sets low-res, low-fps, short duration
+import sys as _sys
+if '--preview' in _sys.argv:
+    idx = _sys.argv.index('--preview')
+    preview_minutes = 1  # default: 1 minute
+    if idx + 1 < len(_sys.argv) and _sys.argv[idx+1].isdigit():
+        preview_minutes = int(_sys.argv[idx+1])
+    FPS = 10
+    DURATION_MINUTES = preview_minutes
+    TOTAL_FRAMES = FPS * 60 * DURATION_MINUTES
+    RESOLUTION_X = 854
+    RESOLUTION_Y = 480
+    RENDER_ENGINE = 'EEVEE'
+    print(f"[PREVIEW] Mode: {preview_minutes}min at 480p/10fps ({TOTAL_FRAMES} frames)")
 SAMPLES = 64
 CHUNK_START = 0       # override for resume
 CHUNK_END = TOTAL_FRAMES

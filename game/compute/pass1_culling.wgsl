@@ -1,3 +1,10 @@
+// vinculum: culling_efficiency / visible_fraction
+//   Ratio of active brick cells vs total grid cells after visibility culling.
+//   Drives downstream dispatch sizing.
+// layer: compute
+// domain: terrain (maps to swarm as search_coverage / explored_fraction,
+//          evacuation as safe_zone_ratio / total_area)
+//
 struct BrickMeta {
   min: f32, scale: f32, moisture: f32, stability: f32,
 }

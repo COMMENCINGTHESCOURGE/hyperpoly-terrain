@@ -1,3 +1,10 @@
+// vinculum: change_magnitude / frame_stability
+//   Ratio of vertex positions changed vs total mesh vertices per frame.
+//   Drives streaming cost for incremental mesh updates.
+// layer: extraction
+// domain: terrain (maps to economy as price_movement / market_stability,
+//          radio as signal_drift / carrier_stability)
+//
 // ──────────────────────────────────────────────────────────────
 // PHASE 5: DELTA MESH STREAMING (Incremental Updates)
 // ──────────────────────────────────────────────────────────────

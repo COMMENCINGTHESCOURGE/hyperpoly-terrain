@@ -1,3 +1,10 @@
+// vinculum: vertex_emission_rate / triangle_budget
+//   Ratio of emitted triangles vs max triangle budget per dispatch.
+//   Controls mesh density and index buffer fill rate.
+// layer: extraction
+// domain: terrain (maps to housing as construction_density / material_budget,
+//          transport as network_connectivity / edge_capacity)
+//
 // ──────────────────────────────────────────────────────────────
 // PHASE 5: TOPOLOGY GENERATION (Dual Contouring Triangulation)
 // ──────────────────────────────────────────────────────────────

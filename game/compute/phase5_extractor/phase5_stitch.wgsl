@@ -1,3 +1,10 @@
+// vinculum: t_junction_count / seam_length
+//   Number of unresolved T-junctions at LOD boundaries vs total seam length.
+//   Zero = watertight mesh across all LOD levels.
+// layer: extraction
+// domain: terrain (maps to housing as wall_continuity / structural_seam,
+//          transport as route_connectivity / intersection_quality)
+//
 // ──────────────────────────────────────────────────────────────
 // PHASE 5: LOD STITCHING (Boundary Vertex Snapping)
 // ──────────────────────────────────────────────────────────────
