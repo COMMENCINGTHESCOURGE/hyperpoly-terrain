@@ -33,6 +33,9 @@ export class HydraulicPipeline {
         this.voxelPermX    = this._createStorage(TOTAL_VOXELS * 2);
         this.voxelPermY    = this._createStorage(TOTAL_VOXELS * 2);
         this.voxelPermZ    = this._createStorage(TOTAL_VOXELS * 2);
+        this.voxelPermXDst = this._createStorage(TOTAL_VOXELS * 2);
+        this.voxelPermYDst = this._createStorage(TOTAL_VOXELS * 2);
+        this.voxelPermZDst = this._createStorage(TOTAL_VOXELS * 2);
         this.voxelCohesion = this._createStorage(TOTAL_VOXELS * 2);
 
         // --- Brick Metadata (6 channels × 16 bytes per brick) ---

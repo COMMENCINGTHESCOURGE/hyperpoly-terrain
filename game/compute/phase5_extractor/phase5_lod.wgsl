@@ -20,8 +20,8 @@ const CELLS: u32 = 255u;
 const CELL_STRIDE: u32 = 65025u;
 
 fn decode_channel(ch: u32, idx: u32, buf: array<F16>) -> f32 {
-  let meta = brick_meta[idx * 6u + ch];
-  return meta.x + f16_decode(buf[idx]) * meta.y;
+  let metadata = brick_meta[idx * 6u + ch];
+  return metadata.x + f16_decode(buf[idx]) * metadata.y;
 }
 
 @group(0) @binding(3) var<uniform> brick_meta: array<vec4<f32>>;

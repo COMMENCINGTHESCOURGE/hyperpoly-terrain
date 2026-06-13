@@ -64,6 +64,11 @@ const VOXELS_PER_BRICK: u32 = 4096u;
 const DT:           f32 = 1.0 / 60.0;
 const GRAVITY:      f32 = 9.81;
 
+const MIN_PERM:     f32 = 0.001;
+const MAX_PERM:     f32 = 10.0;
+const BASE_PERM:    f32 = 1.0;   // baseline permeability for dissipation reset
+const LAMBDA:       f32 = 0.01;  // dissipation rate: perm_next = mix(perm, BASE_PERM, LAMBDA)
+
 // =============================================================================
 // Bindings
 // Group 0: Quantized channel buffers + metadata
@@ -71,7 +76,7 @@ const GRAVITY:      f32 = 9.81;
 // Group 2: (reserved for future uniforms)
 // =============================================================================
 
-@group(0) @binding(0) var<uniform> brick_meta: array<vec4<f32>>; // [min, scale, _, _] × channels
+@group(0) @binding(0) var<storage, read> brick_meta: array<vec4<f32>>; // [min, scale, _, _] × channels
 
 @group(0) @binding(1) var<storage, read>     water_u16:    array<F16>;
 @group(0) @binding(2) var<storage, read_write> water_dst_u16: array<F16>;
@@ -79,6 +84,15 @@ const GRAVITY:      f32 = 9.81;
 @group(0) @binding(4) var<storage, read>     perm_y_u16:   array<F16>;
 @group(0) @binding(5) var<storage, read>     perm_z_u16:   array<F16>;
 
+@group(0) @binding(5) var<storage, read>     perm_z_u16:   array<F16>;
+
+@group(0) @binding(6) var<storage, read>     cohesion_u16:  array<F16>;
+@group(0) @binding(7) var<storage, read_write> perm_x_dst_u16: array<F16>;
+@group(0) @binding(8) var<storage, read_write> perm_y_dst_u16: array<F16>;
+@group(0) @binding(9) var<storage, read_write> perm_z_dst_u16: array<F16>;
+@group(0) @binding(10) var<uniform>          beaver_params: vec4<f32>;
+
+@group(1) @binding(0) var<storage, read> compacted_queue: array<u32>;
 @group(1) @binding(0) var<storage, read> compacted_queue: array<u32>;
 
 // =============================================================================
@@ -90,22 +104,22 @@ const GRAVITY:      f32 = 9.81;
 // =============================================================================
 
 fn read_channel(ch: u32, brick_idx: u32, local_idx: u32, src: array<F16>) -> f32 {
-  let meta = brick_meta[brick_idx * 6u + ch];
+  let metadata = brick_meta[brick_idx * 6u + ch];
   let edit_min = edit_min_buffer[brick_idx * 6u + ch];
   let edit_max = edit_max_buffer[brick_idx * 6u + ch];
 
   // Sentinel: 0xFFFF → use uniform meta
   let use_uniform = (u32(edit_min) == 0xFFFFu);
-  let eff_min = select(f32(edit_min), meta.x, use_uniform);
-  let eff_scale = select(f32(edit_max) - f32(edit_min), meta.y, use_uniform);
+  let eff_min = select(f32(edit_min), metadata.x, use_uniform);
+  let eff_scale = select(f32(edit_max) - f32(edit_min), metadata.y, use_uniform);
 
   let raw = f16_decode(src[brick_idx * VOXELS_PER_BRICK + local_idx]);
   return eff_min + raw * eff_scale;
 }
 
 fn write_channel(ch: u32, brick_idx: u32, local_idx: u32, val: f32, dst: ptr<function, array<F16>>) {
-  let meta = brick_meta[brick_idx * 6u + ch];
-  let norm = clamp((val - meta.x) / meta.y, 0.0, 1.0);
+  let metadata = brick_meta[brick_idx * 6u + ch];
+  let norm = clamp((val - metadata.x) / metadata.y, 0.0, 1.0);
   (*dst)[brick_idx * VOXELS_PER_BRICK + local_idx] = f16_encode(norm);
 }
 
@@ -118,6 +132,34 @@ fn write_water(b: u32, l: u32, v: f32) {
   write_channel(0u, b, l, v, &water_dst_u16);
 }
 
+fn write_water(b: u32, l: u32, v: f32) {
+  write_channel(0u, b, l, v, &water_dst_u16);
+}
+
+fn read_cohesion(b: u32, l: u32) -> f32 { return read_channel(1u, b, l, cohesion_u16); }
+
+fn write_perm_x(b: u32, l: u32, v: f32) { write_channel(2u, b, l, v, &perm_x_dst_u16); }
+fn write_perm_y(b: u32, l: u32, v: f32) { write_channel(3u, b, l, v, &perm_y_dst_u16); }
+fn write_perm_z(b: u32, l: u32, v: f32) { write_channel(4u, b, l, v, &perm_z_dst_u16); }
+
+fn read_perm_x_dst(b: u32, l: u32) -> f32 { return read_channel(2u, b, l, perm_x_dst_u16); }
+fn read_perm_y_dst(b: u32, l: u32) -> f32 { return read_channel(3u, b, l, perm_y_dst_u16); }
+fn read_perm_z_dst(b: u32, l: u32) -> f32 { return read_channel(4u, b, l, perm_z_dst_u16); }
+
+fn write_perm_dst(axis: u32, b: u32, l: u32, v: f32) {
+  if (axis == 0u) { write_perm_x(b, l, v); }
+  else if (axis == 1u) { write_perm_y(b, l, v); }
+  else { write_perm_z(b, l, v); }
+}
+
+fn read_perm_dst(axis: u32, b: u32, l: u32) -> f32 {
+  if (axis == 0u) { return read_perm_x_dst(b, l); }
+  else if (axis == 1u) { return read_perm_y_dst(b, l); }
+  else { return read_perm_z_dst(b, l); }
+}
+
+// =============================================================================
+// Shared Memory: 16 = f32 = 16KB (under 32KB WebGPU limit)
 // =============================================================================
 // Shared Memory: 16³ × f32 = 16KB (under 32KB WebGPU limit)
 // =============================================================================
@@ -159,6 +201,18 @@ fn advection_pass(
     read_perm_z(brick_idx, local_idx)
   );
 
+  );
+
+  // ── Permeability Dissipation: slowly restore toward BASE_PERM ──
+  let current_perm_x = read_perm_x(brick_idx, local_idx);
+  let current_perm_y = read_perm_y(brick_idx, local_idx);
+  let current_perm_z = read_perm_z(brick_idx, local_idx);
+
+  write_perm_x(brick_idx, local_idx, mix(current_perm_x, BASE_PERM, LAMBDA));
+  write_perm_y(brick_idx, local_idx, mix(current_perm_y, BASE_PERM, LAMBDA));
+  write_perm_z(brick_idx, local_idx, mix(current_perm_z, BASE_PERM, LAMBDA));
+
+  // 6-connected face neighbor indices with boundary clamping
   // 6-connected face neighbor indices with boundary clamping
   let ix = i32(lid.x);
   let iy = i32(lid.y);
@@ -191,6 +245,91 @@ fn advection_pass(
 
   // Divergence of flux = net outflow
   let div = (flux.x + flux.y + flux.z) * DT;
+
+  // Update water depth
+  // Divergence of flux = net outflow
+  let div = (flux.x + flux.y + flux.z) * DT;
+
+  // ── Beaver Pattern: Local Agency (Dig + Elevate) ──
+  let TARGET_WATER: f32 = 0.5;
+  let DIG_THRESHOLD: f32 = 0.2;
+  let ELEVATE_THRESHOLD: f32 = 0.1;
+  let DIG_RATE: f32 = 0.05;
+  let ELEVATE_RATE: f32 = 0.03;
+
+  let water_deficit = max(TARGET_WATER - tile_water[local_idx], 0.0);
+  let cohesion = read_cohesion(brick_idx, local_idx);
+
+  if (water_deficit > DIG_THRESHOLD && cohesion > 0.3) {
+    let abs_grad_x = abs(grad.x);
+    let abs_grad_y = abs(grad.y);
+    let abs_grad_z = abs(grad.z);
+    let v_b = beaver_params.x;
+
+    // Determine dominant gradient axis
+    if (abs_grad_x >= abs_grad_y && abs_grad_x >= abs_grad_z) {
+      // X-axis dominant
+      if (grad.x > 0.0) {
+        // Flow is +X direction: downstream is +X, upstream is -X
+        // DIG: increase downstream permeability (attract flow)
+        let current = read_perm_x(brick_idx, local_idx);
+        let next = clamp(current + DIG_RATE * v_b * DT, MIN_PERM, MAX_PERM);
+        write_perm_x(brick_idx, local_idx, next);
+        // ELEVATE: decrease upstream permeability (retain flow)
+        let xm_idx = idx_xm;
+        let up_current = read_perm_x(brick_idx, xm_idx);
+        let up_next = clamp(up_current - ELEVATE_RATE * v_b * DT, MIN_PERM, MAX_PERM);
+        write_perm_x(brick_idx, xm_idx, up_next);
+      } else {
+        // Flow is -X direction: downstream is -X, upstream is +X
+        let current = read_perm_x(brick_idx, local_idx);
+        let next = clamp(current + DIG_RATE * v_b * DT, MIN_PERM, MAX_PERM);
+        write_perm_x(brick_idx, local_idx, next);
+        let xp_idx = idx_xp;
+        let up_current = read_perm_x(brick_idx, xp_idx);
+        let up_next = clamp(up_current - ELEVATE_RATE * v_b * DT, MIN_PERM, MAX_PERM);
+        write_perm_x(brick_idx, xp_idx, up_next);
+      }
+    } else if (abs_grad_y >= abs_grad_x && abs_grad_y >= abs_grad_z) {
+      // Y-axis dominant
+      if (grad.y > 0.0) {
+        let current = read_perm_y(brick_idx, local_idx);
+        let next = clamp(current + DIG_RATE * v_b * DT, MIN_PERM, MAX_PERM);
+        write_perm_y(brick_idx, local_idx, next);
+        let ym_idx = idx_ym;
+        let up_current = read_perm_y(brick_idx, ym_idx);
+        let up_next = clamp(up_current - ELEVATE_RATE * v_b * DT, MIN_PERM, MAX_PERM);
+        write_perm_y(brick_idx, ym_idx, up_next);
+      } else {
+        let current = read_perm_y(brick_idx, local_idx);
+        let next = clamp(current + DIG_RATE * v_b * DT, MIN_PERM, MAX_PERM);
+        write_perm_y(brick_idx, local_idx, next);
+        let yp_idx = idx_yp;
+        let up_current = read_perm_y(brick_idx, yp_idx);
+        let up_next = clamp(up_current - ELEVATE_RATE * v_b * DT, MIN_PERM, MAX_PERM);
+        write_perm_y(brick_idx, yp_idx, up_next);
+      }
+    } else {
+      // Z-axis dominant
+      if (grad.z > 0.0) {
+        let current = read_perm_z(brick_idx, local_idx);
+        let next = clamp(current + DIG_RATE * v_b * DT, MIN_PERM, MAX_PERM);
+        write_perm_z(brick_idx, local_idx, next);
+        let zm_idx = idx_zm;
+        let up_current = read_perm_z(brick_idx, zm_idx);
+        let up_next = clamp(up_current - ELEVATE_RATE * v_b * DT, MIN_PERM, MAX_PERM);
+        write_perm_z(brick_idx, zm_idx, up_next);
+      } else {
+        let current = read_perm_z(brick_idx, local_idx);
+        let next = clamp(current + DIG_RATE * v_b * DT, MIN_PERM, MAX_PERM);
+        write_perm_z(brick_idx, local_idx, next);
+        let zp_idx = idx_zp;
+        let up_current = read_perm_z(brick_idx, zp_idx);
+        let up_next = clamp(up_current - ELEVATE_RATE * v_b * DT, MIN_PERM, MAX_PERM);
+        write_perm_z(brick_idx, zp_idx, up_next);
+      }
+    }
+  }
 
   // Update water depth
   let new_water = clamp(tile_water[local_idx] - div, 0.0, 1.0);

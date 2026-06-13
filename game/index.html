@@ -301,6 +301,12 @@ async function main() {
   if (adapter.limits.maxComputeInvocationsPerWorkgroup >= 512) {
     requiredLimits.maxComputeInvocationsPerWorkgroup = 512;
   }
+  if (adapter.limits.maxStorageBufferBindingSize) {
+    requiredLimits.maxStorageBufferBindingSize = adapter.limits.maxStorageBufferBindingSize;
+  }
+  if (adapter.limits.maxBufferSize) {
+    requiredLimits.maxBufferSize = adapter.limits.maxBufferSize;
+  }
   const device = await adapter.requestDevice({ requiredLimits });
   const context = wgpuCanvas.getContext('webgpu');
   const format = navigator.gpu.getPreferredCanvasFormat();
@@ -458,16 +464,17 @@ async function main() {
   // INIT COMPUTE + RENDER PIPELINE
   // ═══════════════════════════════════════════════════════════════
   const base = 'compute';
+  const tBuster = Date.now();
   const [hermiteWGSL, qefWGSL, lodWGSL, deltaWGSL, topoWGSL, stitchWGSL, editWGSL, renderWGSL] = 
     await Promise.all([
-      fetch(`${base}/phase5_extractor/phase5_hermite.wgsl`).then(r => r.text()),
-      fetch(`${base}/phase5_extractor/phase5_qef.wgsl`).then(r => r.text()),
-      fetch(`${base}/phase5_extractor/phase5_lod.wgsl`).then(r => r.text()),
-      fetch(`${base}/phase5_extractor/phase5_delta.wgsl`).then(r => r.text()),
-      fetch(`${base}/phase5_extractor/phase5_topology.wgsl`).then(r => r.text()),
-      fetch(`${base}/phase5_extractor/phase5_stitch.wgsl`).then(r => r.text()),
-      fetch(`${base}/phase6_edit/phase6_edit.wgsl`).then(r => r.text()),
-      fetch('render/render_terrain.wgsl').then(r => r.text()),
+      fetch(`${base}/phase5_extractor/phase5_hermite.wgsl?t=${tBuster}`).then(r => r.text()),
+      fetch(`${base}/phase5_extractor/phase5_qef.wgsl?t=${tBuster}`).then(r => r.text()),
+      fetch(`${base}/phase5_extractor/phase5_lod.wgsl?t=${tBuster}`).then(r => r.text()),
+      fetch(`${base}/phase5_extractor/phase5_delta.wgsl?t=${tBuster}`).then(r => r.text()),
+      fetch(`${base}/phase5_extractor/phase5_topology.wgsl?t=${tBuster}`).then(r => r.text()),
+      fetch(`${base}/phase5_extractor/phase5_stitch.wgsl?t=${tBuster}`).then(r => r.text()),
+      fetch(`${base}/phase6_edit/phase6_edit.wgsl?t=${tBuster}`).then(r => r.text()),
+      fetch(`render/render_terrain.wgsl?t=${tBuster}`).then(r => r.text()),
     ]);
 
   // Terrain Renderer

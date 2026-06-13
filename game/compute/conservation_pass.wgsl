@@ -19,9 +19,9 @@ fn conservation_pass(@builtin(global_invocation_id) gid: vec3<u32>,
   let brick_idx = gid.x / 16u + (gid.y / 16u) * 16u + (gid.z / 16u) * 256u;
 
   // Decode current value
-  let meta = brick_meta[brick_idx * 6u];
+  let metadata = brick_meta[brick_idx * 6u];
   let encoded = water_dst_u16[brick_idx * 4096u + local_idx];
-  let val = meta.x + f16_decode(encoded) * meta.y;
+  let val = metadata.x + f16_decode(encoded) * metadata.y;
   wg_sum[local_idx] = val;
   workgroupBarrier();
 
@@ -42,9 +42,9 @@ fn conservation_pass(@builtin(global_invocation_id) gid: vec3<u32>,
     // Apply distributed correction to all voxels in this brick
     for (var i = 0u; i < 4096u; i++) {
       let raw = water_dst_u16[brick_idx * 4096u + i];
-      let decoded = meta.x + f16_decode(raw) * meta.y;
+      let decoded = metadata.x + f16_decode(raw) * metadata.y;
       let corrected = decoded - drift;
-      let norm = clamp((corrected - meta.x) / meta.y, 0.0, 1.0);
+      let norm = clamp((corrected - metadata.x) / metadata.y, 0.0, 1.0);
       water_corrected_u16[brick_idx * 4096u + i] = f16_encode(norm);
     }
   }

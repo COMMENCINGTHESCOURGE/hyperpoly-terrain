@@ -45,18 +45,18 @@ const VOXELS_PER_BRICK: u32 = 4096u;
 
 // ── Helper: Encode with Range Expansion Detection ─────────────
 fn encode_with_expansion(ch: u32, brick_idx: u32, local_idx: u32, val: f32, dst: ptr<function, array<F16>>) -> bool {
-  let meta = brick_meta[brick_idx * 6u + ch];
+  let metadata = brick_meta[brick_idx * 6u + ch];
   
   // Guard against division by zero
-  if (meta.y < 1e-6) {
+  if (metadata.y < 1e-6) {
     (*dst)[brick_idx * VOXELS_PER_BRICK + local_idx] = f16_encode(clamp(val, 0.0, 1.0));
     return false; // No expansion needed if range is degenerate
   }
   
-  let norm = (val - meta.x) / meta.y;
+  let norm = (val - metadata.x) / metadata.y;
 
-  let needs_expand_min = (val < meta.x);
-  let needs_expand_max = (val > meta.x + meta.y);
+  let needs_expand_min = (val < metadata.x);
+  let needs_expand_max = (val > metadata.x + metadata.y);
 
   let clamped = clamp(norm, 0.0, 1.0);
   (*dst)[brick_idx * VOXELS_PER_BRICK + local_idx] = f16_encode(clamped);

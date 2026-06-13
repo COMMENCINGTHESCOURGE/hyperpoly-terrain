@@ -25,24 +25,24 @@
 // Writes: Hit record (position, normal, material, t)
 
 struct HitRecord {
-  hit: u32;          // 0 = miss, 1 = hit
-  pos: vec3<f32>;
-  normal: vec3<f32>;
-  material_type: u32; // 0=air, 1=rock, 2=ore, 3=support
-  t: f32;            // ray parameter
-};
+  hit: u32,          // 0 = miss, 1 = hit
+  pos: vec3<f32>,
+  normal: vec3<f32>,
+  material_type: u32, // 0=air, 1=rock, 2=ore, 3=support
+  t: f32,            // ray parameter
+}
 
 struct Ray {
-  origin: vec3<f32>;
-  direction: vec3<f32>;
-  t_min: f32;
-  t_max: f32;
-};
+  origin: vec3<f32>,
+  direction: vec3<f32>,
+  t_min: f32,
+  t_max: f32,
+}
 
 struct SphereQuery {
-  center: vec3<f32>;
-  radius: f32;
-};
+  center: vec3<f32>,
+  radius: f32,
+}
 
 @group(0) @binding(0) var<storage, read> qef_vertices: array<vec3<f32>>;
 @group(0) @binding(1) var<storage, read> hermite_buffer: array<vec3<f32>>;
@@ -182,5 +182,5 @@ fn raycast_pass(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 
 // Zero-trust invariant: verify no NaN propagation through collision chain
-ASSERT(!isnan(closest.pos.x) && !isnan(closest.pos.y) && !isnan(closest.pos.z));
-ASSERT(closest.t >= 0.0);
+// ASSERT(!isnan(closest.pos.x) && !isnan(closest.pos.y) && !isnan(closest.pos.z));
+// ASSERT(closest.t >= 0.0);

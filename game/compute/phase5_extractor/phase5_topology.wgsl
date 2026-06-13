@@ -12,9 +12,9 @@
 // Writes: Dense triangle index buffer (u32 × 3) via atomic emission
 
 struct HermiteData {
-  pos: vec3<f32>;
-  normal: vec3<f32>;
-  weight: f32;
+  pos: vec3<f32>,
+  normal: vec3<f32>,
+  weight: f32,
 }
 
 @group(0) @binding(0) var<storage, read> qef_vertices: array<vec3<f32>>;

@@ -19,9 +19,9 @@
 // ./game/compute/phase5_extractor/phase5_qef.wgsl (inlined)
 const qefWGSL = `
 struct HermiteData {
-  pos: vec3<f32>;
-  normal: vec3<f32>;
-  weight: f32;
+  pos: vec3<f32>,
+  normal: vec3<f32>,
+  weight: f32,
 }
 @group(0) @binding(0) var<storage, read> hermite_buffer: array<HermiteData>;
 @group(0) @binding(1) var<storage, read_write> vertex_buffer: array<vec3<f32>>;
@@ -31,16 +31,17 @@ const CELLS: u32 = 255u;
 const VERTICES_PER_DIM: u32 = 257u;
 const VERTEX_STRIDE: u32 = 66049u;
 
+fn load(vx:u32,vy:u32,vz:u32)->HermiteData {
+  let vi = vx + vy * VERTICES_PER_DIM + vz * VERTEX_STRIDE;
+  return hermite_buffer[vi];
+}
+
 @compute @workgroup_size(8, 8, 1)
 fn qef_solve(@builtin(global_invocation_id) gid: vec3<u32>) {
   let cx = gid.x;
   let cy = gid.y;
   let cz = gid.z;
   if (cx >= CELLS || cy >= CELLS || cz >= CELLS) { return; }
-  fn load(vx:u32,vy:u32,vz:u32)->HermiteData {
-    let vi = vx + vy * VERTICES_PER_DIM + vz * VERTEX_STRIDE;
-    return hermite_buffer[vi];
-  }
   var h: array<HermiteData, 8>;
   h[0] = load(cx,   cy,   cz);
   h[1] = load(cx+1, cy,   cz);
@@ -50,7 +51,7 @@ fn qef_solve(@builtin(global_invocation_id) gid: vec3<u32>) {
   h[5] = load(cx+1, cy,   cz+1);
   h[6] = load(cx,   cy+1, cz+1);
   h[7] = load(cx+1, cy+1, cz+1);
-  var A=mat3x3<f32>(0.0); var b=vec3<f32>(0.0); var max_w=0.0;
+  var A=mat3x3<f32>(); var b=vec3<f32>(0.0); var max_w=0.0;
   for (var i=0u;i<8u;i++) {
     let n=h[i].normal; let p=h[i].pos; let w=h[i].weight;
     let wt=1.0+w*10.0;
@@ -99,6 +100,12 @@ async function main() {
   const requiredLimits = {};
   if (adapter.limits.maxComputeInvocationsPerWorkgroup >= 512) {
     requiredLimits.maxComputeInvocationsPerWorkgroup = 512;
+  }
+  if (adapter.limits.maxStorageBufferBindingSize) {
+    requiredLimits.maxStorageBufferBindingSize = adapter.limits.maxStorageBufferBindingSize;
+  }
+  if (adapter.limits.maxBufferSize) {
+    requiredLimits.maxBufferSize = adapter.limits.maxBufferSize;
   }
   const device = await adapter.requestDevice({ requiredLimits });
   log('<span class="info">[test] Device obtained</span>');

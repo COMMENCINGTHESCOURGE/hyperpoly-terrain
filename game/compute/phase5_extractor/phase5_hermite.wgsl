@@ -12,9 +12,9 @@
 // Writes: HermiteData { position: vec3<f32>, normal: vec3<f32>, feature_weight: f32 }
 
 struct HermiteData {
-  pos: vec3<f32>;
-  normal: vec3<f32>;
-  weight: f32;  // Feature preservation strength (0=smooth, 1=sharp)
+  pos: vec3<f32>,
+  normal: vec3<f32>,
+  weight: f32,  // Feature preservation strength (0=smooth, 1=sharp)
 }
 
 @group(0) @binding(0) var<uniform> brick_meta: array<vec4<f32>>;
@@ -29,13 +29,13 @@ const VERTICES_PER_DIM: u32 = 257u;  // GRID + 1
 const VERTEX_STRIDE: u32 = 66049u;   // 257 * 257
 
 fn decode_density(idx: u32) -> f32 {
-  let meta = brick_meta[idx * 6u];
-  return meta.x + f16_decode(density_u16[idx]) * meta.y;
+  let metadata = brick_meta[idx * 6u];
+  return metadata.x + f16_decode(density_u16[idx]) * metadata.y;
 }
 
 fn decode_cohesion(idx: u32) -> f32 {
-  let meta = brick_meta[idx * 6u + 5u];
-  return meta.x + f16_decode(cohesion_u16[idx]) * meta.y;
+  let metadata = brick_meta[idx * 6u + 5u];
+  return metadata.x + f16_decode(cohesion_u16[idx]) * metadata.y;
 }
 
 fn sample_vertex(vx: u32, vy: u32, vz: u32) -> HermiteData {

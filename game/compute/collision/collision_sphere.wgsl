@@ -13,18 +13,18 @@
 // expanded hit radius = sphere_radius + cell_feature_offset.
 
 struct HitRecord {
-  hit: u32;
-  pos: vec3<f32>;
-  normal: vec3<f32>;
-  material_type: u32;
-  t: f32;
-};
+  hit: u32,
+  pos: vec3<f32>,
+  normal: vec3<f32>,
+  material_type: u32,
+  t: f32,
+}
 
 struct SphereQuery {
-  center: vec3<f32>;
-  radius: f32;
-  velocity: vec3<f32>;  // Movement vector for this frame
-};
+  center: vec3<f32>,
+  radius: f32,
+  velocity: vec3<f32>,  // Movement vector for this frame
+}
 
 @group(1) @binding(0) var<storage, read> qef_vertices: array<vec3<f32>>;
 @group(1) @binding(1) var<storage, read> hermite_buffer: array<vec3<f32>>;

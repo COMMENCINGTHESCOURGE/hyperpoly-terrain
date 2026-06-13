@@ -24,9 +24,9 @@ fn culling_pass(@builtin(global_invocation_id) gid: vec3<u32>) {
   let brick_idx = gid.x;
   if (brick_idx >= 4096u) { return; }
 
-  let meta = meta_buffer[brick_idx];
-  let moisture = meta.moisture;
-  let stability = meta.stability;
+  let metadata = meta_buffer[brick_idx];
+  let moisture = metadata.moisture;
+  let stability = metadata.stability;
 
   // ── LOD-based activation ──
   // Convert brick_idx to world-space center
@@ -43,7 +43,7 @@ fn culling_pass(@builtin(global_invocation_id) gid: vec3<u32>) {
   let selected_lod = select(2u, select(1u, 0u, dist_to_camera < 40.0), dist_to_camera < 80.0);
 
   // Only activate if this brick's current LOD matches or is finer than selected
-  let lod_valid = meta.lod >= selected_lod;
+  let lod_valid = metadata.lod >= selected_lod;
 
   // EMA smoothing using brick_state high bits
   let last_moisture = f32((brick_state[brick_idx] >> 8u) & 0xFFu) / 255.0;

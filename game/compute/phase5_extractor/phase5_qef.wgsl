@@ -12,9 +12,9 @@
 // Writes: Dual vertex positions for mesh extraction
 
 struct HermiteData {
-  pos: vec3<f32>;
-  normal: vec3<f32>;
-  weight: f32;
+  pos: vec3<f32>,
+  normal: vec3<f32>,
+  weight: f32,
 }
 
 @group(0) @binding(0) var<storage, read> hermite_buffer: array<HermiteData>;
@@ -51,7 +51,7 @@ fn qef_solve(@builtin(global_invocation_id) gid: vec3<u32>) {
   h[7] = load_hermite(cx + 1, cy + 1, cz + 1);
 
   // Build QEF matrix
-  var A = mat3x3<f32>(0.0);
+  var A = mat3x3<f32>();
   var b = vec3<f32>(0.0);
   var max_weight = 0.0;
 

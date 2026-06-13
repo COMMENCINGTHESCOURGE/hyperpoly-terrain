@@ -12,16 +12,16 @@
 // Writes: Vertex deltas for GPU transform feedback
 
 struct MeshDelta {
-  vertex_idx: u32;
-  delta_pos: vec3<f32>;
-  delta_normal: vec3<f32>;
+  vertex_idx: u32,
+  delta_pos: vec3<f32>,
+  delta_normal: vec3<f32>,
 }
 
 struct BrickMetaCompact {
-  moisture: f32;
-  stability: f32;
-  change_flag: u32;
-  _pad: u32;
+  moisture: f32,
+  stability: f32,
+  change_flag: u32,
+  _pad: u32,
 }
 
 @group(0) @binding(0) var<storage, read> brick_meta: array<BrickMetaCompact>;
@@ -41,8 +41,8 @@ fn delta_compute(@builtin(global_invocation_id) gid: vec3<u32>) {
   let brick_idx = gid.x;
   if (brick_idx >= TOTAL_BRICKS) { return; }
 
-  let meta = brick_meta[brick_idx];
-  if (meta.change_flag == 0u) { return; }
+  let metadata = brick_meta[brick_idx];
+  if (metadata.change_flag == 0u) { return; }
 
   // For each vertex belonging to this brick, compute delta
   let bz = brick_idx / (BRICKS_PER_DIM * BRICKS_PER_DIM);
