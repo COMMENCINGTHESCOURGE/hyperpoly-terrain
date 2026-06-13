@@ -96,7 +96,11 @@ async function main() {
   log('<span class="info">[test] Starting QEF Governor Verification</span>');
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
   if (!adapter) { log('<span class="fail">WebGPU not available</span>'); return; }
-  const device = await adapter.requestDevice();
+  const requiredLimits = {};
+  if (adapter.limits.maxComputeInvocationsPerWorkgroup >= 512) {
+    requiredLimits.maxComputeInvocationsPerWorkgroup = 512;
+  }
+  const device = await adapter.requestDevice({ requiredLimits });
   log('<span class="info">[test] Device obtained</span>');
 
   const V = 257, C = 255;
